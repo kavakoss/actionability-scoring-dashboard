@@ -130,10 +130,11 @@ The Vite dev server proxies `/api` requests to `http://localhost:8000` automatic
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | `/api/health` | Health check + alert count |
+| GET | `/api/health` | Health check + mode (mock/live) |
 | GET | `/api/alerts` | List alerts (filterable: `?technique=&level=&agent=`) |
 | GET | `/api/alerts/{id}` | Single alert detail + full scoring breakdown |
 | GET | `/api/timeline/{id}` | Timeline graph (nodes + edges) from seed alert |
+| POST | `/api/webhook` | **Wazuh Integration webhook** — receive alert → score + find related |
 | GET | `/api/stats` | Aggregate statistics |
 | GET | `/docs` | Interactive Swagger documentation |
 
@@ -141,29 +142,68 @@ The Vite dev server proxies `/api` requests to `http://localhost:8000` automatic
 
 ## Switching from Mock Data to Real Wazuh Indexer
 
-When ready to connect to real Wazuh Indexer (OpenSearch):
+### Step 1: Copy & configure .env
 
-1. Update `backend/main.py` — replace `MOCK_ALERTS` import with OpenSearch queries:
-
-```python
-from opensearchpy import OpenSearch
-
-client = OpenSearch(
-    hosts=[{"host": "36.93.185.111", "port": 9200}],
-    http_auth=("admin", "your-password"),
-    use_ssl=True,
-    verify_certs=False,
-)
-
-# Query alerts
-response = client.search(
-    index="wazuh-alerts-*",
-    body={"query": {"match_all": {}}, "size": 100},
-)
+```powershell
+cd dashboard/backend
+copy .env.example .env
+# Edit .env — isi WAZUH_INDEXER_PASS dengan password sebenarnya
 ```
 
-2. Map the OpenSearch `_source` fields to match the expected structure in `scoring.py`.
-3. The scoring engine and correlation logic remain unchanged.
+### Step 2: Set USE_LIVE_WAZUH=true
+
+Di `.env`:
+```
+USE_LIVE_WAZUH=true
+```
+
+### Step 3: Restart backend
+
+```powershell
+python main.py
+# → Health check akan tampil "mode": "live"
+```
+
+### How it works (live mode)
+
+```text
+Wazuh Integration            Backend (FastAPI)           Wazuh Indexer
+───────────────              ─────────────────           ──────────────
+Alert fired (level>=7)
+    │
+    └──POST /api/webhook────► 1. Score the alert
+                              2. Extract entities
+                                 (processGuid, user,
+                                  host, dstIp...)
+                              3. query_related_events()
+                                 ──────────────────────► OpenSearch:
+                                                         "Cari semua event
+                                                          dgn processGuid /
+                                                          user / IP yg sama"
+                                 ◄────────────────────── Return related events
+                              4. Score semua related events
+                              5. Build correlation graph
+                              6. Return scoring + timeline
+```
+
+### Wazuh Manager Integration Config
+
+Tambahkan di `/var/ossec/etc/ossec.conf` pada Wazuh Manager:
+
+```xml
+<integration>
+    <name>actionability-scoring</name>
+    <hook_url>http://172.16.11.1:8000/api/webhook</hook_url>
+    <level>7</level>
+    <group>sysmon</group>
+    <alert_format>json</alert_format>
+</integration>
+```
+
+Setelah edit, restart Wazuh Manager:
+```bash
+sudo systemctl restart wazuh-manager
+```
 
 ---
 

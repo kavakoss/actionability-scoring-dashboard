@@ -1,17 +1,39 @@
 """FastAPI Backend for Actionability Scoring & Timeline Dashboard.
 
 Serves as the API layer between React frontend and Wazuh Indexer (OpenSearch).
-Currently uses mock data; swap `mock_data` for `opensearch-py` queries in production.
+
+Two modes:
+  MOCK  — uses mock_data.py (default, no Wazuh needed)
+  LIVE  — queries Wazuh Indexer via wazuh_client.py
+  Set USE_LIVE_WAZUH=true in .env to switch to live mode.
+
+Wazuh Integration flow (live mode):
+  1. Wazuh Manager fires alert → POST /api/webhook
+  2. Backend extracts entities (processGuid, user, host, IP...)
+  3. Backend queries Wazuh Indexer for related events via wazuh_client
+  4. All events scored + correlation graph built
+  5. Result stored in-memory, retrievable via /api/alerts / /api/timeline
 """
 
-from fastapi import FastAPI, HTTPException, Query
+import os
+from dotenv import load_dotenv
+
+load_dotenv()  # Load .env if present
+
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 
-from mock_data import MOCK_ALERTS
 from scoring import score_alerts, calculate_score
 from correlation import build_correlation_graph, build_timeline_with_edges
 
-app = FastAPI(title="Actionability Scoring Dashboard API", version="0.1.0")
+USE_LIVE = os.getenv("USE_LIVE_WAZUH", "false").lower() == "true"
+
+if USE_LIVE:
+    from wazuh_client import query_alerts, query_related_events, extract_entities
+else:
+    from mock_data import MOCK_ALERTS
+
+app = FastAPI(title="Actionability Scoring Dashboard API", version="0.2.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -20,14 +42,81 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ── Pre-compute scored alerts ────────────────────────────────────
-SCORED_ALERTS = score_alerts(MOCK_ALERTS)
-GRAPH = build_correlation_graph(SCORED_ALERTS)
+# ── In-memory store ──────────────────────────────────────────────
+SCORED_ALERTS: list = []
+GRAPH = None
+
+
+def _init_mock():
+    global SCORED_ALERTS, GRAPH
+    SCORED_ALERTS = score_alerts(MOCK_ALERTS)
+    GRAPH = build_correlation_graph(SCORED_ALERTS)
+
+
+def _rebuild_graph():
+    global GRAPH
+    GRAPH = build_correlation_graph(SCORED_ALERTS)
+
+
+if not USE_LIVE:
+    _init_mock()
+
+
+# ── Webhook: Wazuh Integration ───────────────────────────────────
+@app.post("/api/webhook")
+async def wazuh_webhook(request: Request):
+    """Receive alert from Wazuh Manager integration.
+
+    Flow:
+      1. Wazuh sends alert JSON → this endpoint
+      2. Extract entities from alert
+      3. Query Wazuh Indexer for related events
+      4. Score all events + rebuild correlation graph
+    """
+    if not USE_LIVE:
+        return {
+            "status": "mock_mode",
+            "message": "Set USE_LIVE_WAZUH=true in .env to enable live processing",
+        }
+
+    alert = await request.json()
+
+    # 1. Score the incoming alert
+    [scored_alert] = score_alerts([alert])
+
+    # 2. Extract entities & find related events
+    entities = extract_entities(alert)
+    related_raw = query_related_events(entities)
+
+    # 3. Score related events
+    scored_related = score_alerts(related_raw) if related_raw else []
+
+    # 4. Merge into in-memory store (deduplicate by _id)
+    global SCORED_ALERTS
+    seen_ids = {a.get("_id") for a in SCORED_ALERTS}
+    for a in [scored_alert] + scored_related:
+        if a.get("_id") not in seen_ids:
+            SCORED_ALERTS.append(a)
+            seen_ids.add(a.get("_id"))
+
+    _rebuild_graph()
+
+    return {
+        "status": "processed",
+        "seed_alert_id": scored_alert.get("_id"),
+        "seed_score": scored_alert.get("scoring", {}).get("total_score"),
+        "seed_level": scored_alert.get("scoring", {}).get("level"),
+        "related_events_found": len(scored_related),
+    }
 
 
 @app.get("/api/health")
 def health():
-    return {"status": "ok", "alerts_count": len(SCORED_ALERTS)}
+    return {
+        "status": "ok",
+        "mode": "live" if USE_LIVE else "mock",
+        "alerts_count": len(SCORED_ALERTS),
+    }
 
 
 @app.get("/api/alerts")
