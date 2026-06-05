@@ -50,9 +50,9 @@ export default function AlertDetail({ alertId, onBack, onShowTimeline }) {
             <p className="text-4xl font-bold text-white">{s.total_score}</p>
             <p className="text-sm text-slate-400">of {s.max_score} max</p>
             <span className={`inline-block mt-2 px-3 py-1 rounded-full text-sm font-bold ${
-              s.level === 'High' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+              s.level === 'High' ? 'bg-red-500/20 text-red-300 border border-red-500/30'
               : s.level === 'Medium' ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
-              : 'bg-red-500/20 text-red-300 border border-red-500/30'
+              : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
             }`}>
               {s.level} Actionability ({s.percentage}%)
             </span>

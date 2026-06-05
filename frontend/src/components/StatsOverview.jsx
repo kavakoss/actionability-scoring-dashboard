@@ -3,7 +3,7 @@ export default function StatsOverview({ stats }) {
 
   const { total_alerts, by_level, by_technique } = stats
 
-  const levelColors = { Low: 'bg-red-500', Medium: 'bg-amber-500', High: 'bg-emerald-500' }
+  const levelColors = { Low: 'bg-emerald-500', Medium: 'bg-amber-500', High: 'bg-red-500' }
   const techColors = {
     'T1059.001': 'bg-violet-500',
     'T1059.003': 'bg-cyan-500',

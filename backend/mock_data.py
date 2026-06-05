@@ -1,9 +1,3 @@
-"""Mock alert data simulating Wazuh alerts with Sysmon telemetry.
-
-Format matches real Wazuh Indexer `_source` documents observed from screenshots.
-Covers 3 MITRE techniques: T1059.001 (PowerShell), T1059.003 (CMD), T1105 (Ingress Transfer)
-"""
-
 MOCK_ALERTS = [
     # ── T1059.001: PowerShell Execution ──────────────────────────
     {

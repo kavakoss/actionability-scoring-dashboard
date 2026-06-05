@@ -1,9 +1,9 @@
 export default function ScoringDashboard({ alerts, filters, onFilter, onSelect }) {
   const levelBadge = (level) => {
     const colors = {
-      Low: 'bg-red-500/20 text-red-300 border-red-500/30',
+      Low: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30',
       Medium: 'bg-amber-500/20 text-amber-300 border-amber-500/30',
-      High: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30',
+      High: 'bg-red-500/20 text-red-300 border-red-500/30',
     }
     return `px-2 py-0.5 rounded text-xs font-medium border ${colors[level] || ''}`
   }
@@ -87,7 +87,7 @@ export default function ScoringDashboard({ alerts, filters, onFilter, onSelect }
                       <div className="w-20 h-1.5 bg-slate-700 rounded-full overflow-hidden">
                         <div
                           className={`h-full rounded-full score-bar ${
-                            s.level === 'High' ? 'bg-emerald-500' : s.level === 'Medium' ? 'bg-amber-500' : 'bg-red-500'
+                            s.level === 'High' ? 'bg-red-500' : s.level === 'Medium' ? 'bg-amber-500' : 'bg-emerald-500'
                           }`}
                           style={{ width: `${Math.min(s.percentage || 0, 100)}%` }}
                         />

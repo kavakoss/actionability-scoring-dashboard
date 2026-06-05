@@ -31,9 +31,9 @@ export default function TimelineView({ alerts, seedId, onSelectSeed }) {
 
   const levelBadge = (level) => {
     const colors = {
-      Low: 'bg-red-500/20 text-red-300 border-red-500/30',
+      Low: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30',
       Medium: 'bg-amber-500/20 text-amber-300 border-amber-500/30',
-      High: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30',
+      High: 'bg-red-500/20 text-red-300 border-red-500/30',
     }
     return `px-2 py-0.5 rounded text-xs font-medium border ${colors[level] || ''}`
   }
