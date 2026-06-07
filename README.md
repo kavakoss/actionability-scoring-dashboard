@@ -1,6 +1,32 @@
 # Actionability Scoring Dashboard — Setup Guide
 
-## Prerequisites
+## Quick Start (Docker) 🐳
+
+```bash
+git clone https://github.com/kavakoss/actionability-scoring-dashboard.git
+cd actionability-scoring-dashboard
+docker-compose up --build
+```
+
+Buka **http://localhost** (atau **http://localhost:8080** kalau port 80 bentrok).
+
+| URL | Description |
+|-----|-------------|
+| `http://localhost` | Dashboard React |
+| `http://localhost/api/docs` | Swagger API docs |
+| `http://localhost/api/health` | Health check |
+
+### Stop
+
+```bash
+docker-compose down
+```
+
+---
+
+## Manual Setup (Development)
+
+### Prerequisites
 
 - **Python 3.10+** (tested on 3.12)
 - **Node.js 18+** (tested on 20)
@@ -14,13 +40,17 @@
 dashboard/
 ├── backend/
 │   ├── main.py           # FastAPI server
-│   ├── scoring.py        # Actionability scoring engine
+│   ├── scoring.py        # Actionability scoring engine (AHP + MITRE)
 │   ├── correlation.py    # Graph-based correlation + BFS
+│   ├── wazuh_client.py   # OpenSearch client (live mode)
 │   ├── mock_data.py      # Mock Wazuh alerts (3 MITRE techniques)
+│   ├── .env.example      # Environment template
+│   ├── Dockerfile
 │   └── requirements.txt
 ├── frontend/
 │   ├── package.json
 │   ├── vite.config.js
+│   ├── Dockerfile
 │   ├── index.html
 │   └── src/
 │       ├── main.jsx
