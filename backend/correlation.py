@@ -1,151 +1,611 @@
-"""Graph-based Correlation Engine for Attack Timeline Reconstruction.
+"""Typed-edge correlation engine (identity-first, context-second).
 
-Uses NetworkX to build entity-based correlation graph and BFS for traversal.
+Design used in this thesis:
+
+  1. Pivots are classified as *identity* (process.guid, parent->child guid,
+     sha256), *behavioral* (destination tuple, DNS, file, registry) or *scope*
+     (user, host, timestamp).
+  2. Every edge is a typed relationship (SAME_PROCESS, PARENT_CHILD,
+     PROCESS_CONNECTED_TO, ...) with provenance evidence, not a blind sum of
+     matching fields.
+  3. Relationship confidence follows the weighted model:
+
+         C = 0.45*P + 0.20*T + 0.15*H + 0.10*S + 0.10*X
+
+     P = pivot strength, T = temporal proximity (exponential decay),
+     H = host consistency, S = session/user consistency,
+     X = independent corroborating evidence.
+  4. Graph expansion is bounded (depth + node cap) and only identity-backed
+     edges may recurse; scope pivots (user/host/time) never expand the graph.
 """
 
-import networkx as nx
+from __future__ import annotations
+
+import math
 from collections import deque
+from datetime import datetime, timedelta, timezone
+
+import networkx as nx
+
+from normalizer import normalize_alert
+
+# ── Confidence model ─────────────────────────────────────────────
+CONFIDENCE_WEIGHTS = {
+    "pivot": 0.45,
+    "time": 0.20,
+    "host": 0.15,
+    "session": 0.10,
+    "corroboration": 0.10,
+}
+
+STRONG_THRESHOLD = 0.85
+SUPPORTED_THRESHOLD = 0.65
+CANDIDATE_THRESHOLD = 0.45
+
+IDENTITY_PIVOTS = {"process.guid", "parent.child.guid", "file.hash.sha256"}
+
+# ── Typed relationships ──────────────────────────────────────────
+# window_s : retrieval / acceptance window for the relationship
+# tau_s    : decay constant for T = exp(-dt/tau)
+# expand   : may the edge be traversed to keep expanding the case?
+RELATION_TYPES = {
+    "SAME_PROCESS": {
+        "P": 1.00, "window_s": 21600, "tau_s": 900, "host": "same", "expand": True,
+    },
+    "PARENT_CHILD": {
+        "P": 0.98, "window_s": 3600, "tau_s": 900, "host": "same", "expand": True,
+    },
+    "SAME_BINARY": {
+        "P": 0.95, "window_s": 86400, "tau_s": 21600, "host": "any", "expand": True,
+    },
+    "PROCESS_CONNECTED_TO": {
+        "P": 0.80, "window_s": 300, "tau_s": 300, "host": "same", "expand": True,
+    },
+    "PROCESS_QUERIED_DNS": {
+        "P": 0.78, "window_s": 300, "tau_s": 300, "host": "same", "expand": True,
+    },
+    "PROCESS_MODIFIED_REGISTRY": {
+        "P": 0.72, "window_s": 600, "tau_s": 600, "host": "same", "expand": True,
+    },
+    "PROCESS_CREATED_FILE": {
+        "P": 0.62, "window_s": 600, "tau_s": 600, "host": "same", "expand": True,
+    },
+    "PROCESS_TERMINATED": {
+        "P": 1.00, "window_s": 21600, "tau_s": 900, "host": "same", "expand": False,
+    },
+    "DESTINATION_SHARED": {
+        "P": 0.45, "window_s": 300, "tau_s": 300, "host": "same", "expand": False,
+    },
+    "SUPPORTING_CONTEXT": {
+        "P": 0.35, "window_s": 300, "tau_s": 300, "host": "same", "expand": False,
+    },
+}
+
+# Identity-backed relationships keep identity windows even when the event pair
+# is a process->network / process->terminate pair (the guid proves identity,
+# proximity is not what justifies the edge).
+LIFECYCLE_WINDOW_S = 21600
+LIFECYCLE_TAU_S = 900
 
 
-CORRELATION_RULES = [
-    {"key": "processGuid", "path": "data.win.eventdata.processGuid", "score": 100},
-    {"key": "parentProcessGuid", "path": "data.win.eventdata.parentProcessGuid", "score": 90},
-    {"key": "hashes", "path": "data.win.eventdata.hashes", "score": 90},
-    {"key": "user", "path": "data.win.eventdata.user", "score": 70},
-    {"key": "sourceIp", "path": "data.win.eventdata.sourceIp", "score": 60},
-    {"key": "host", "path": "agent.name", "score": 50},
-    {"key": "destinationIp", "path": "data.win.eventdata.destinationIp", "score": 60},
-]
+def parse_timestamp(value):
+    """Parse ISO-8601 (incl. trailing Z) into an aware UTC datetime."""
+    if isinstance(value, datetime):
+        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
 
 
-def _get_nested(data: dict, path: str):
-    for key in path.split("."):
-        if isinstance(data, dict):
-            data = data.get(key)
-        else:
-            return None
-    return data
+def format_timestamp(value) -> str | None:
+    parsed = parse_timestamp(value)
+    if parsed is None:
+        return None
+    return parsed.astimezone(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
-def _extract_entities(alert: dict) -> dict:
-    """Extract correlatable entities from an alert."""
-    entities = {}
-    for rule in CORRELATION_RULES:
-        value = _get_nested(alert, rule["path"])
-        if value and str(value).strip():
-            entities[rule["key"]] = str(value).strip()
-    return entities
+# ── Pivot extraction ─────────────────────────────────────────────
+def extract_pivots(norm: dict) -> list:
+    """Ranked pivots that can retrieve related telemetry for a normalized event."""
+    process = norm["process"]
+    pivots = []
 
-
-def compute_correlation_score(entities_a: dict, entities_b: dict) -> int:
-    """Compute correlation score between two sets of entities."""
-    score = 0
-    for rule in CORRELATION_RULES:
-        key = rule["key"]
-        val_a = entities_a.get(key)
-        val_b = entities_b.get(key)
-        if val_a and val_b and val_a == val_b:
-            score += rule["score"]
-    return score
-
-
-def build_correlation_graph(alerts: list) -> nx.Graph:
-    """Build a NetworkX graph from alerts with correlation edges."""
-    G = nx.Graph()
-
-    # Add nodes
-    for alert in alerts:
-        alert_id = alert.get("_id", alert.get("id"))
-        G.add_node(alert_id, alert=alert, entities=_extract_entities(alert))
-
-    # Add edges
-    node_ids = list(G.nodes())
-    for i in range(len(node_ids)):
-        for j in range(i + 1, len(node_ids)):
-            entities_a = G.nodes[node_ids[i]]["entities"]
-            entities_b = G.nodes[node_ids[j]]["entities"]
-            score = compute_correlation_score(entities_a, entities_b)
-            if score > 0:
-                G.add_edge(node_ids[i], node_ids[j], weight=score)
-
-    return G
-
-
-def bfs_timeline(G: nx.Graph, seed_id: str) -> list:
-    """Traverse graph using BFS and return timeline sorted by timestamp."""
-    if seed_id not in G:
-        return []
-
-    visited = set()
-    queue = deque([seed_id])
-    timeline_nodes = []
-
-    while queue:
-        node = queue.popleft()
-        if node not in visited:
-            visited.add(node)
-            timeline_nodes.append(node)
-            for neighbor in G.neighbors(node):
-                if neighbor not in visited:
-                    queue.append(neighbor)
-
-    # Build timeline with alert data, sorted by timestamp
-    result = []
-    for node_id in timeline_nodes:
-        alert = G.nodes[node_id]["alert"]
-        result.append({
-            "id": node_id,
-            "timestamp": alert.get("@timestamp", ""),
-            "agent": _get_nested(alert, "agent.name"),
-            "mitre": alert.get("mitre", {}),
-            "rule": alert.get("rule", {}),
-            "scoring": alert.get("scoring", {}),
+    if process["guid"]:
+        pivots.append({
+            "name": "self_process",
+            "field": "process.guid",
+            "value": process["guid"],
+            "window_s": LIFECYCLE_WINDOW_S,
+            "expand": True,
+            "host_scoped": True,
+        })
+        pivots.append({
+            "name": "children",
+            "field": "process.parent.guid",
+            "value": process["guid"],
+            "window_s": LIFECYCLE_WINDOW_S,
+            "expand": True,
+            "host_scoped": True,
+        })
+    if process["parent"]["guid"]:
+        pivots.append({
+            "name": "parent",
+            "field": "process.guid",
+            "value": process["parent"]["guid"],
+            "window_s": LIFECYCLE_WINDOW_S,
+            "expand": True,
+            "host_scoped": True,
         })
 
-    result.sort(key=lambda x: x["timestamp"])
+    sha256 = norm["file"]["hash"].get("sha256")
+    if sha256:
+        pivots.append({
+            "name": "sha256",
+            "field": "file.hash.sha256",
+            "value": sha256,
+            "window_s": 86400,
+            "expand": True,
+            "host_scoped": False,
+        })
+
+    if norm["destination"]["ip"]:
+        pivots.append({
+            "name": "destination",
+            "field": "destination.ip",
+            "value": norm["destination"]["ip"],
+            "window_s": 300,
+            "expand": False,
+            "host_scoped": True,
+        })
+
+    if norm["user"]["name"]:
+        pivots.append({
+            "name": "user",
+            "field": "user.name",
+            "value": norm["user"]["name"],
+            "window_s": 300,
+            "expand": False,
+            "host_scoped": True,
+        })
+
+    return pivots
+
+
+# ── Pair classification ──────────────────────────────────────────
+def _lineage_eligible(a: dict, b: dict) -> bool:
+    """Process lineage is only defined between Process Create records."""
+    return a["event"]["id"] == "1" and b["event"]["id"] == "1"
+
+
+def _verified_pivots(a: dict, b: dict) -> list:
+    """All pivots that independently hold between two normalized events."""
+    found = []
+    ap, bp = a["process"], b["process"]
+
+    if ap["guid"] and ap["guid"] == bp["guid"]:
+        found.append(("process.guid", 1.00))
+    if _lineage_eligible(a, b):
+        if ap["guid"] and ap["guid"] == bp["parent"]["guid"]:
+            found.append(("parent.child.guid", 0.98))
+        if bp["guid"] and bp["guid"] == ap["parent"]["guid"]:
+            found.append(("parent.child.guid", 0.98))
+
+    sha_a = a["file"]["hash"].get("sha256")
+    sha_b = b["file"]["hash"].get("sha256")
+    if sha_a and sha_a == sha_b:
+        found.append(("file.hash.sha256", 0.95))
+
+    da, db = a["destination"], b["destination"]
+    if da["ip"] and da["ip"] == db["ip"]:
+        if not da["port"] or not db["port"] or da["port"] == db["port"]:
+            found.append(("destination.ip/port", 0.80))
+
+    ua, ub = a["user"]["name"], b["user"]["name"]
+    if ua and ua == ub:
+        found.append(("user.name", 0.35))
+
+    return found
+
+
+def _relation_label(a: dict, b: dict) -> str | None:
+    ap, bp = a["process"], b["process"]
+    families = {a["event"]["id"], b["event"]["id"]}
+
+    if ap["guid"] and ap["guid"] == bp["guid"]:
+        if "3" in families:
+            return "PROCESS_CONNECTED_TO"
+        if "22" in families:
+            return "PROCESS_QUERIED_DNS"
+        if "11" in families:
+            return "PROCESS_CREATED_FILE"
+        if families & {"12", "13", "14"}:
+            return "PROCESS_MODIFIED_REGISTRY"
+        if "5" in families:
+            return "PROCESS_TERMINATED"
+        return "SAME_PROCESS"
+
+    # Lineage requires Process Create records on both sides, so a create event
+    # does not also become a "child" of the parent's terminate event (that pair
+    # is already linked through SAME_PROCESS).
+    if _lineage_eligible(a, b):
+        if ap["guid"] and ap["guid"] == bp["parent"]["guid"]:
+            return "PARENT_CHILD"
+        if bp["guid"] and bp["guid"] == ap["parent"]["guid"]:
+            return "PARENT_CHILD"
+
+    sha_a = a["file"]["hash"].get("sha256")
+    sha_b = b["file"]["hash"].get("sha256")
+    if sha_a and sha_a == sha_b:
+        return "SAME_BINARY"
+
+    da, db = a["destination"], b["destination"]
+    if da["ip"] and da["ip"] == db["ip"]:
+        return "DESTINATION_SHARED"
+
+    ua, ub = a["user"]["name"], b["user"]["name"]
+    if ua and ua == ub:
+        return "SUPPORTING_CONTEXT"
+
+    return None
+
+
+def _incidental_corroborators(a: dict, b: dict) -> int:
+    count = 0
+    if a["process"]["executable"] and a["process"]["executable"] == b["process"]["executable"]:
+        count += 1
+    if a["process"]["command_line"] and a["process"]["command_line"] == b["process"]["command_line"]:
+        count += 1
+    if a["process"]["parent"]["guid"] and a["process"]["parent"]["guid"] == b["process"]["parent"]["guid"]:
+        count += 1
+    return count
+
+
+def classify_pair(a: dict, b: dict) -> dict | None:
+    """Validate the semantic relationship between two normalized events.
+
+    Returns a typed edge with confidence and provenance, or None when the
+    pair must not become a case relationship.
+    """
+    if a["id"] == b["id"]:
+        return None
+
+    relation = _relation_label(a, b)
+    if relation is None:
+        return None
+
+    config = RELATION_TYPES[relation]
+    verified = _verified_pivots(a, b)
+    if not verified:
+        return None
+
+    primary_name, pivot_strength = max(verified, key=lambda item: item[1])
+    identity_backed = primary_name in IDENTITY_PIVOTS
+
+    window_s, tau_s = config["window_s"], config["tau_s"]
+    if identity_backed:
+        window_s = max(window_s, LIFECYCLE_WINDOW_S)
+        tau_s = max(tau_s, LIFECYCLE_TAU_S)
+
+    ts_a, ts_b = parse_timestamp(a["timestamp"]), parse_timestamp(b["timestamp"])
+    delta_s = None
+    if ts_a and ts_b:
+        delta_s = abs((ts_a - ts_b).total_seconds())
+        if delta_s > window_s:
+            return None
+        temporal = math.exp(-delta_s / tau_s)
+    else:
+        temporal = 0.5
+
+    host_a, host_b = a["host"]["name"], b["host"]["name"]
+    same_host = None
+    if host_a and host_b:
+        same_host = host_a == host_b
+    if config["host"] == "same" and same_host is False:
+        return None
+    host_consistency = 1.0 if same_host else 0.5
+
+    user_a, user_b = a["user"]["name"], b["user"]["name"]
+    if user_a and user_b:
+        session_consistency = 1.0 if user_a == user_b else 0.0
+    else:
+        session_consistency = 0.5
+
+    corroborators = max(0, len(verified) - 1) + _incidental_corroborators(a, b)
+    corroboration = min(1.0, 0.5 * corroborators)
+
+    confidence = (
+        CONFIDENCE_WEIGHTS["pivot"] * pivot_strength
+        + CONFIDENCE_WEIGHTS["time"] * temporal
+        + CONFIDENCE_WEIGHTS["host"] * host_consistency
+        + CONFIDENCE_WEIGHTS["session"] * session_consistency
+        + CONFIDENCE_WEIGHTS["corroboration"] * corroboration
+    )
+
+    if confidence >= STRONG_THRESHOLD:
+        decision = "strong"
+    elif confidence >= SUPPORTED_THRESHOLD and corroborators >= 1:
+        decision = "supported"
+    elif confidence >= CANDIDATE_THRESHOLD:
+        decision = "candidate"
+    else:
+        return None
+
+    evidence = [
+        f"primary={primary_name} (P={pivot_strength:.2f})",
+        f"temporal={temporal:.3f}" + (f" (dt={delta_s:.0f}s)" if delta_s is not None else ""),
+        f"host={host_consistency:.2f}",
+        f"session={session_consistency:.2f}",
+        f"corroborators={corroborators}",
+    ]
+    evidence.extend(f"also={name}" for name, _ in verified if name != primary_name)
+
+    if relation == "SAME_BINARY" and same_host:
+        # Same bytes on the same host is expected; this pivot exists to find
+        # the same binary on OTHER endpoints, so it must not recurse here.
+        expandable = False
+    else:
+        expandable = bool(config["expand"] and identity_backed and decision in ("strong", "supported"))
+
+    edge = {
+        "source": a["id"],
+        "target": b["id"],
+        "relation": relation,
+        "confidence": round(confidence, 4),
+        "weight": int(round(confidence * 100)),
+        "delta_s": delta_s,
+        "decision": decision,
+        "identity_backed": identity_backed,
+        "expand": expandable,
+        "evidence": evidence,
+    }
+
+    if relation == "PARENT_CHILD":
+        if a["process"]["guid"] and a["process"]["guid"] == b["process"]["parent"]["guid"]:
+            edge["parent_id"], edge["child_id"] = a["id"], b["id"]
+        else:
+            edge["parent_id"], edge["child_id"] = b["id"], a["id"]
+
+    return edge
+
+
+# ── In-memory graph (mock data, dashboard, webhook batch) ────────
+def build_correlation_graph(alerts: list, min_confidence: float = CANDIDATE_THRESHOLD) -> nx.Graph:
+    """Build a NetworkX graph where edges are typed, validated relationships."""
+    graph = nx.Graph()
+
+    normalized = [normalize_alert(alert) for alert in alerts]
+    for norm in normalized:
+        graph.add_node(norm["id"], alert=norm["raw"], norm=norm)
+
+    for i in range(len(normalized)):
+        for j in range(i + 1, len(normalized)):
+            edge = classify_pair(normalized[i], normalized[j])
+            if edge is None or edge["confidence"] < min_confidence:
+                continue
+            graph.add_edge(
+                normalized[i]["id"],
+                normalized[j]["id"],
+                **{k: v for k, v in edge.items() if k not in ("source", "target")},
+            )
+
+    return graph
+
+
+def _summary(norm: dict) -> str:
+    process = norm["process"]
+    return (
+        process["executable"]
+        or process["command_line"]
+        or (norm["rule"] or {}).get("description")
+        or norm["event"]["id"]
+    )
+
+
+def bfs_timeline(graph: nx.Graph, seed_id: str, max_depth: int = 3) -> list:
+    """Bounded BFS: weak edges provide context but are never traversed."""
+    if seed_id not in graph:
+        return []
+
+    visited = {seed_id}
+    queue = deque([(seed_id, 0)])
+    ordered = [seed_id]
+
+    while queue:
+        node_id, depth = queue.popleft()
+        if depth >= max_depth:
+            continue
+        for neighbor in graph.neighbors(node_id):
+            edge = graph.get_edge_data(node_id, neighbor)
+            if neighbor not in visited:
+                visited.add(neighbor)
+                ordered.append(neighbor)
+                if edge.get("expand"):
+                    queue.append((neighbor, depth + 1))
+
+    result = [{"id": node_id, "timestamp": graph.nodes[node_id]["alert"].get("@timestamp", "")} for node_id in ordered]
+    result.sort(key=lambda item: item["timestamp"])
     return result
 
 
-def build_timeline_with_edges(G: nx.Graph, seed_id: str) -> dict:
-    """Build full timeline response including nodes and edges."""
-    if seed_id not in G:
+def build_timeline_with_edges(graph: nx.Graph, seed_id: str, max_depth: int = 3) -> dict:
+    """Timeline response: ordered nodes plus the typed edges that link them."""
+    if seed_id not in graph:
         return {"nodes": [], "edges": []}
 
-    visited = set()
-    queue = deque([seed_id])
-    related_nodes = set()
-    related_edges = []
+    visited = {seed_id}
+    queue = deque([(seed_id, 0)])
+    node_ids = {seed_id}
+    edges = {}
 
     while queue:
-        node = queue.popleft()
-        if node not in visited:
-            visited.add(node)
-            related_nodes.add(node)
-            for neighbor in G.neighbors(node):
-                edge_data = G.get_edge_data(node, neighbor)
-                related_edges.append({
-                    "source": node,
+        node_id, depth = queue.popleft()
+        for neighbor in graph.neighbors(node_id):
+            data = graph.get_edge_data(node_id, neighbor)
+            key = tuple(sorted((node_id, neighbor)))
+            if key not in edges:
+                edges[key] = {
+                    "source": node_id,
                     "target": neighbor,
-                    "weight": edge_data["weight"],
-                })
-                if neighbor not in visited:
-                    queue.append(neighbor)
+                    "weight": data.get("weight"),
+                    "relation": data.get("relation"),
+                    "confidence": data.get("confidence"),
+                    "decision": data.get("decision"),
+                    "delta_s": data.get("delta_s"),
+                }
+            if neighbor not in visited:
+                visited.add(neighbor)
+                node_ids.add(neighbor)
+                if depth + 1 < max_depth and data.get("expand"):
+                    queue.append((neighbor, depth + 1))
 
     nodes = []
-    for node_id in related_nodes:
-        alert = G.nodes[node_id]["alert"]
+    for node_id in node_ids:
+        norm = graph.nodes[node_id]["norm"]
         nodes.append({
             "id": node_id,
-            "timestamp": alert.get("@timestamp", ""),
-            "agent": _get_nested(alert, "agent.name"),
-            "mitre": alert.get("mitre", {}),
-            "rule": alert.get("rule", {}),
-            "scoring": alert.get("scoring", {}),
-            "summary": (
-                alert.get("data", {}).get("win", {}).get("eventdata", {}).get("image", "")
-                or alert.get("rule", {}).get("description", "")
-            ),
+            "timestamp": norm["timestamp"] or "",
+            "agent": norm["host"]["name"],
+            "mitre": norm["mitre"] or {},
+            "rule": norm["rule"] or {},
+            "scoring": norm["scoring"] or {},
+            "event_id": norm["event"]["id"],
+            "user": norm["user"]["name"],
+            "process": norm["process"]["name"],
+            "summary": _summary(norm),
         })
 
-    nodes.sort(key=lambda x: x["timestamp"])
-    return {"nodes": nodes, "edges": related_edges}
+    nodes.sort(key=lambda item: item["timestamp"])
+    return {"nodes": nodes, "edges": list(edges.values())}
+
+
+# ── Bounded live expansion over the Wazuh Indexer ────────────────
+def _fact_key(relation: str, candidate: dict):
+    """Collapse repeated evidence into one context fact with occurrences.
+
+    Ten executions of the same binary / ten network records for the same
+    destination must not become ten case nodes.
+    """
+    if relation == "SAME_BINARY":
+        sha256 = candidate["file"]["hash"].get("sha256")
+        return (relation, sha256, candidate["host"]["name"], candidate["process"]["executable"])
+    if relation in ("DESTINATION_SHARED", "SUPPORTING_CONTEXT"):
+        return (
+            relation,
+            candidate["host"]["name"],
+            candidate["user"]["name"],
+            candidate["process"]["name"],
+            candidate["destination"]["ip"],
+        )
+    return (relation, candidate["id"])
+
+
+def expand_case(
+    seed_raw: dict,
+    search_fn,
+    max_depth: int = 3,
+    max_nodes: int = 200,
+    min_confidence: float = CANDIDATE_THRESHOLD,
+    max_candidates_per_pivot: int = 300,
+) -> dict:
+    """Bounded graph expansion: seed -> pivots -> candidates -> typed edges.
+
+    ``search_fn(pivot)`` must return raw Wazuh events for a pivot that carries
+    ``field``, ``value``, ``time_from``, ``time_to`` and optional ``agent_name``.
+
+    Repeated evidence of the same fact is aggregated (occurrence count) instead
+    of being added as duplicate nodes/edges.
+    """
+    seed = normalize_alert(seed_raw)
+    nodes = {seed["id"]: seed}
+    edges = {}
+    facts = {}
+    queue = deque([(seed["id"], 0)])
+    expanded = set()
+    stats = {
+        "searches": 0,
+        "candidates": 0,
+        "by_relation": {},
+        "aggregated": 0,
+        "errors": [],
+        "truncated": False,
+    }
+
+    while queue and len(nodes) < max_nodes:
+        node_id, depth = queue.popleft()
+        if node_id in expanded:
+            continue
+        expanded.add(node_id)
+
+        current = nodes[node_id]
+        if depth >= max_depth:
+            continue
+
+        for pivot in extract_pivots(current):
+            anchor = parse_timestamp(current["timestamp"]) or datetime.now(timezone.utc)
+            window_s = pivot["window_s"]
+            search_pivot = {
+                **pivot,
+                "time_from": anchor - timedelta(seconds=window_s),
+                "time_to": anchor + timedelta(seconds=window_s),
+                "agent_name": current["host"]["name"] if pivot["host_scoped"] else None,
+            }
+            try:
+                candidates = search_fn(search_pivot) or []
+            except Exception as exc:
+                stats["errors"].append(f"{pivot['name']}: {type(exc).__name__}: {exc}")
+                continue
+
+            stats["searches"] += 1
+            for raw in candidates[:max_candidates_per_pivot]:
+                stats["candidates"] += 1
+                candidate = normalize_alert(raw)
+                if candidate["id"] == current["id"]:
+                    continue
+
+                edge = classify_pair(current, candidate)
+                if edge is None or edge["confidence"] < min_confidence:
+                    continue
+                edge["source"], edge["target"] = node_id, candidate["id"]
+
+                key = tuple(sorted((edge["source"], edge["target"])))
+                if key in edges:
+                    continue
+
+                fact = _fact_key(edge["relation"], candidate)
+                if fact in facts:
+                    facts[fact]["occurrences"] += 1
+                    edges[facts[fact]["edge_key"]]["occurrences"] = facts[fact]["occurrences"]
+                    stats["aggregated"] += 1
+                    continue
+
+                facts[fact] = {"occurrences": 1, "edge_key": key}
+                edge["occurrences"] = 1
+                edges[key] = edge
+                stats["by_relation"][edge["relation"]] = stats["by_relation"].get(edge["relation"], 0) + 1
+
+                if candidate["id"] in nodes:
+                    continue
+                nodes[candidate["id"]] = candidate
+                if edge["expand"] and depth + 1 < max_depth:
+                    queue.append((candidate["id"], depth + 1))
+                if len(nodes) >= max_nodes:
+                    stats["truncated"] = True
+                    break
+
+    stats["nodes"] = len(nodes)
+    stats["edges"] = len(edges)
+    return {
+        "seed": seed,
+        "nodes": list(nodes.values()),
+        "edges": list(edges.values()),
+        "stats": stats,
+    }

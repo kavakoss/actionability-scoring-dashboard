@@ -2,8 +2,14 @@
 __pycache__/
 *.pyc
 venv/
-.env        # ← credentials, NEVER commit
+.venv/
 *.egg-info/
+
+# Credentials — NEVER commit
+.env
+
+# Demo artifacts
+case_*.json
 
 # Node
 node_modules/
