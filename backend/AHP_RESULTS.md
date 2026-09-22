@@ -1,6 +1,6 @@
 # AHP Weight Calculation — Actionability Scoring Instrument
 
-Generated: 2026-09-22T15:55:20+00:00
+Generated: 2026-09-22T16:01:20+00:00
 
 Method: AHP (Saaty 1-9 scale), column-normalized priority vector; consistency required: CR < 0.10 (Saaty, 1980)
 
@@ -8,24 +8,24 @@ Method: AHP (Saaty 1-9 scale), column-normalized priority vector; consistency re
 
 | Criterion | behavioral | relationship | identity | ioc | network | timeline |
 |---|---|---|---|---|---|---|
-| **Behavioral / Intent** | **1.000** | **1.000** | **3.000** | **3.000** | **3.000** | **5.000** |
-| **Relationship / Process Chain** | **1.000** | **1.000** | **1.000** | **3.000** | **3.000** | **5.000** |
+| **Behavioral / Intent** | **1.000** | **1.000** | **3.000** | **3.000** | **1.000** | **5.000** |
+| **Relationship / Process Chain** | **1.000** | **1.000** | **1.000** | **3.000** | **2.000** | **5.000** |
 | **Identity** | **0.333** | **1.000** | **1.000** | **1.000** | **1.000** | **5.000** |
 | **IOC / Threat Intelligence** | **0.333** | **0.333** | **1.000** | **1.000** | **1.000** | **3.000** |
-| **Network** | **0.333** | **0.333** | **1.000** | **1.000** | **1.000** | **3.000** |
+| **Network** | **1.000** | **0.500** | **1.000** | **1.000** | **1.000** | **3.000** |
 | **Timeline / Event Context** | **0.200** | **0.200** | **0.200** | **0.333** | **0.333** | **1.000** |
 
 ### Category weights
 
 | Criterion | Weight | lambda max | CI | CR | Consistent |
 |---|---:|---:|---:|---:|---|
-| Behavioral / Intent | 0.3097 | 4.1565 | 0.0522 | 0.0579 | yes |
-| Relationship / Process Chain | 0.2634 | 5.0725 | 0.0181 | 0.0162 | yes |
-| Identity | 0.1572 | 5.1283 | 0.0321 | 0.0286 | yes |
-| IOC / Threat Intelligence | 0.1133 | 3.0387 | 0.0194 | 0.0334 | yes |
-| Network | 0.1133 | 4.1185 | 0.0395 | 0.0439 | yes |
-| Timeline / Event Context | 0.0431 | 3.0000 | 0.0000 | 0.0000 | yes |
-| **Category matrix (level 1)** | 1.0000 | 6.1919 | 0.0384 | 0.0309 | yes |
+| Behavioral / Intent | 0.2716 | 4.1565 | 0.0522 | 0.0579 | yes |
+| Relationship / Process Chain | 0.2517 | 5.0725 | 0.0181 | 0.0162 | yes |
+| Identity | 0.1609 | 5.1283 | 0.0321 | 0.0286 | yes |
+| IOC / Threat Intelligence | 0.1182 | 3.0387 | 0.0194 | 0.0334 | yes |
+| Network | 0.1538 | 4.1185 | 0.0395 | 0.0439 | yes |
+| Timeline / Event Context | 0.0438 | 3.0000 | 0.0000 | 0.0000 | yes |
+| **Category matrix (level 1)** | 1.0000 | 6.2462 | 0.0492 | 0.0397 | yes |
 
 ## 2. Field comparison matrices and priority vectors
 
@@ -40,10 +40,10 @@ Method: AHP (Saaty 1-9 scale), column-normalized priority vector; consistency re
 
 | Field | Local priority | Global weight | Rank | CR |
 |---|---:|---:|---:|---:|
-| Command Line (`commandLine`) | 0.6750 | 0.2090 | 1 | 0.0579 |
-| Current Directory (`currentDirectory`) | 0.1321 | 0.0409 | 2 | 0.0579 |
-| Original File Name (`originalFileName`) | 0.1321 | 0.0409 | 3 | 0.0579 |
-| File Description (`description`) | 0.0607 | 0.0188 | 4 | 0.0579 |
+| Command Line (`commandLine`) | 0.6750 | 0.1834 | 1 | 0.0579 |
+| Current Directory (`currentDirectory`) | 0.1321 | 0.0359 | 2 | 0.0579 |
+| Original File Name (`originalFileName`) | 0.1321 | 0.0359 | 3 | 0.0579 |
+| File Description (`description`) | 0.0607 | 0.0165 | 4 | 0.0579 |
 
 lambda max = 4.1565, CI = 0.0522, CR = 0.0579 (consistent)
 
@@ -59,11 +59,11 @@ lambda max = 4.1565, CI = 0.0522, CR = 0.0579 (consistent)
 
 | Field | Local priority | Global weight | Rank | CR |
 |---|---:|---:|---:|---:|
-| Parent Image (`parentImage`) | 0.4453 | 0.1173 | 1 | 0.0162 |
-| Parent Command Line (`parentCommandLine`) | 0.2146 | 0.0565 | 2 | 0.0162 |
-| Parent Process ID (`parentProcessId`) | 0.0719 | 0.0189 | 4 | 0.0162 |
-| Process GUID (`processGuid`) | 0.0618 | 0.0163 | 5 | 0.0162 |
-| Parent Process GUID (`parentProcessGuid`) | 0.2064 | 0.0544 | 3 | 0.0162 |
+| Parent Image (`parentImage`) | 0.4453 | 0.1121 | 1 | 0.0162 |
+| Parent Command Line (`parentCommandLine`) | 0.2146 | 0.0540 | 2 | 0.0162 |
+| Parent Process ID (`parentProcessId`) | 0.0719 | 0.0181 | 4 | 0.0162 |
+| Process GUID (`processGuid`) | 0.0618 | 0.0156 | 5 | 0.0162 |
+| Parent Process GUID (`parentProcessGuid`) | 0.2064 | 0.0519 | 3 | 0.0162 |
 
 lambda max = 5.0725, CI = 0.0181, CR = 0.0162 (consistent)
 
@@ -79,11 +79,11 @@ lambda max = 5.0725, CI = 0.0181, CR = 0.0162 (consistent)
 
 | Field | Local priority | Global weight | Rank | CR |
 |---|---:|---:|---:|---:|
-| Process Image (`image`) | 0.4641 | 0.0730 | 1 | 0.0286 |
-| Process ID (`processId`) | 0.2017 | 0.0317 | 2 | 0.0286 |
-| User Context (`user`) | 0.2017 | 0.0317 | 3 | 0.0286 |
-| Hostname (`hostname`) | 0.0888 | 0.0140 | 4 | 0.0286 |
-| Integrity Level (`integrityLevel`) | 0.0436 | 0.0069 | 5 | 0.0286 |
+| Process Image (`image`) | 0.4641 | 0.0747 | 1 | 0.0286 |
+| Process ID (`processId`) | 0.2017 | 0.0325 | 2 | 0.0286 |
+| User Context (`user`) | 0.2017 | 0.0325 | 3 | 0.0286 |
+| Hostname (`hostname`) | 0.0888 | 0.0143 | 4 | 0.0286 |
+| Integrity Level (`integrityLevel`) | 0.0436 | 0.0070 | 5 | 0.0286 |
 
 lambda max = 5.1283, CI = 0.0321, CR = 0.0286 (consistent)
 
@@ -97,9 +97,9 @@ lambda max = 5.1283, CI = 0.0321, CR = 0.0286 (consistent)
 
 | Field | Local priority | Global weight | Rank | CR |
 |---|---:|---:|---:|---:|
-| File Hash (`hashes`) | 0.6333 | 0.0718 | 1 | 0.0334 |
-| Signature Status (`signatureStatus`) | 0.2605 | 0.0295 | 2 | 0.0334 |
-| Company (`company`) | 0.1062 | 0.0120 | 3 | 0.0334 |
+| File Hash (`hashes`) | 0.6333 | 0.0749 | 1 | 0.0334 |
+| Signature Status (`signatureStatus`) | 0.2605 | 0.0308 | 2 | 0.0334 |
+| Company (`company`) | 0.1062 | 0.0125 | 3 | 0.0334 |
 
 lambda max = 3.0387, CI = 0.0194, CR = 0.0334 (consistent)
 
@@ -114,10 +114,10 @@ lambda max = 3.0387, CI = 0.0194, CR = 0.0334 (consistent)
 
 | Field | Local priority | Global weight | Rank | CR |
 |---|---:|---:|---:|---:|
-| Destination IP (`destinationIp`) | 0.5579 | 0.0632 | 1 | 0.0439 |
-| Destination Port (`destinationPort`) | 0.2633 | 0.0298 | 2 | 0.0439 |
-| Source IP (`sourceIp`) | 0.1219 | 0.0138 | 3 | 0.0439 |
-| Protocol (`protocol`) | 0.0569 | 0.0064 | 4 | 0.0439 |
+| Destination IP (`destinationIp`) | 0.5579 | 0.0858 | 1 | 0.0439 |
+| Destination Port (`destinationPort`) | 0.2633 | 0.0405 | 2 | 0.0439 |
+| Source IP (`sourceIp`) | 0.1219 | 0.0187 | 3 | 0.0439 |
+| Protocol (`protocol`) | 0.0569 | 0.0088 | 4 | 0.0439 |
 
 lambda max = 4.1185, CI = 0.0395, CR = 0.0439 (consistent)
 
@@ -131,9 +131,9 @@ lambda max = 4.1185, CI = 0.0395, CR = 0.0439 (consistent)
 
 | Field | Local priority | Global weight | Rank | CR |
 |---|---:|---:|---:|---:|
-| Event ID (`eventID`) | 0.4286 | 0.0185 | 1 | 0.0000 |
-| Rule Level (`ruleLevel`) | 0.4286 | 0.0185 | 2 | 0.0000 |
-| Timestamp (`timestamp`) | 0.1429 | 0.0062 | 3 | 0.0000 |
+| Event ID (`eventID`) | 0.4286 | 0.0188 | 1 | 0.0000 |
+| Rule Level (`ruleLevel`) | 0.4286 | 0.0188 | 2 | 0.0000 |
+| Timestamp (`timestamp`) | 0.1429 | 0.0063 | 3 | 0.0000 |
 
 lambda max = 3.0000, CI = 0.0000, CR = 0.0000 (consistent)
 
@@ -141,30 +141,30 @@ lambda max = 3.0000, CI = 0.0000, CR = 0.0000 (consistent)
 
 | Global rank | Field | Category | Global weight | Local weight |
 |---:|---|---|---:|---:|
-| 1 | Command Line (`commandLine`) | Behavioral / Intent | 0.2090 | 0.6750 |
-| 2 | Parent Image (`parentImage`) | Relationship / Process Chain | 0.1173 | 0.4453 |
-| 3 | Process Image (`image`) | Identity | 0.0730 | 0.4641 |
-| 4 | File Hash (`hashes`) | IOC / Threat Intelligence | 0.0718 | 0.6333 |
-| 5 | Destination IP (`destinationIp`) | Network | 0.0632 | 0.5579 |
-| 6 | Parent Command Line (`parentCommandLine`) | Relationship / Process Chain | 0.0565 | 0.2146 |
-| 7 | Parent Process GUID (`parentProcessGuid`) | Relationship / Process Chain | 0.0544 | 0.2064 |
-| 8 | Original File Name (`originalFileName`) | Behavioral / Intent | 0.0409 | 0.1321 |
-| 9 | Current Directory (`currentDirectory`) | Behavioral / Intent | 0.0409 | 0.1321 |
-| 10 | User Context (`user`) | Identity | 0.0317 | 0.2017 |
-| 11 | Process ID (`processId`) | Identity | 0.0317 | 0.2017 |
-| 12 | Destination Port (`destinationPort`) | Network | 0.0298 | 0.2633 |
-| 13 | Signature Status (`signatureStatus`) | IOC / Threat Intelligence | 0.0295 | 0.2605 |
-| 14 | Parent Process ID (`parentProcessId`) | Relationship / Process Chain | 0.0189 | 0.0719 |
-| 15 | File Description (`description`) | Behavioral / Intent | 0.0188 | 0.0607 |
-| 16 | Rule Level (`ruleLevel`) | Timeline / Event Context | 0.0185 | 0.4286 |
-| 17 | Event ID (`eventID`) | Timeline / Event Context | 0.0185 | 0.4286 |
-| 18 | Process GUID (`processGuid`) | Relationship / Process Chain | 0.0163 | 0.0618 |
-| 19 | Hostname (`hostname`) | Identity | 0.0140 | 0.0888 |
-| 20 | Source IP (`sourceIp`) | Network | 0.0138 | 0.1219 |
-| 21 | Company (`company`) | IOC / Threat Intelligence | 0.0120 | 0.1062 |
-| 22 | Integrity Level (`integrityLevel`) | Identity | 0.0069 | 0.0436 |
-| 23 | Protocol (`protocol`) | Network | 0.0064 | 0.0569 |
-| 24 | Timestamp (`timestamp`) | Timeline / Event Context | 0.0062 | 0.1429 |
+| 1 | Command Line (`commandLine`) | Behavioral / Intent | 0.1834 | 0.6750 |
+| 2 | Parent Image (`parentImage`) | Relationship / Process Chain | 0.1121 | 0.4453 |
+| 3 | Destination IP (`destinationIp`) | Network | 0.0858 | 0.5579 |
+| 4 | File Hash (`hashes`) | IOC / Threat Intelligence | 0.0749 | 0.6333 |
+| 5 | Process Image (`image`) | Identity | 0.0747 | 0.4641 |
+| 6 | Parent Command Line (`parentCommandLine`) | Relationship / Process Chain | 0.0540 | 0.2146 |
+| 7 | Parent Process GUID (`parentProcessGuid`) | Relationship / Process Chain | 0.0519 | 0.2064 |
+| 8 | Destination Port (`destinationPort`) | Network | 0.0405 | 0.2633 |
+| 9 | Original File Name (`originalFileName`) | Behavioral / Intent | 0.0359 | 0.1321 |
+| 10 | Current Directory (`currentDirectory`) | Behavioral / Intent | 0.0359 | 0.1321 |
+| 11 | User Context (`user`) | Identity | 0.0325 | 0.2017 |
+| 12 | Process ID (`processId`) | Identity | 0.0325 | 0.2017 |
+| 13 | Signature Status (`signatureStatus`) | IOC / Threat Intelligence | 0.0308 | 0.2605 |
+| 14 | Rule Level (`ruleLevel`) | Timeline / Event Context | 0.0188 | 0.4286 |
+| 15 | Event ID (`eventID`) | Timeline / Event Context | 0.0188 | 0.4286 |
+| 16 | Source IP (`sourceIp`) | Network | 0.0187 | 0.1219 |
+| 17 | Parent Process ID (`parentProcessId`) | Relationship / Process Chain | 0.0181 | 0.0719 |
+| 18 | File Description (`description`) | Behavioral / Intent | 0.0165 | 0.0607 |
+| 19 | Process GUID (`processGuid`) | Relationship / Process Chain | 0.0156 | 0.0618 |
+| 20 | Hostname (`hostname`) | Identity | 0.0143 | 0.0888 |
+| 21 | Company (`company`) | IOC / Threat Intelligence | 0.0125 | 0.1062 |
+| 22 | Protocol (`protocol`) | Network | 0.0088 | 0.0569 |
+| 23 | Integrity Level (`integrityLevel`) | Identity | 0.0070 | 0.0436 |
+| 24 | Timestamp (`timestamp`) | Timeline / Event Context | 0.0063 | 0.1429 |
 
 ## 4. Notes
 

@@ -24,12 +24,13 @@ from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from scoring import score_alerts, calculate_score
-from correlation import build_correlation_graph, build_timeline_with_edges
+from correlation import build_correlation_graph, build_timeline_with_edges, expand_case
+from case_scoring import score_graph_case, score_expansion_case
 
 USE_LIVE = os.getenv("USE_LIVE_WAZUH", "false").lower() == "true"
 
 if USE_LIVE:
-    from wazuh_client import query_alerts, query_related_events, extract_entities
+    from wazuh_client import query_alerts, query_related_events, extract_entities, search_pivot
 else:
     from mock_data import MOCK_ALERTS
 
@@ -45,17 +46,46 @@ app.add_middleware(
 # ── In-memory store ──────────────────────────────────────────────
 SCORED_ALERTS: list = []
 GRAPH = None
+CASES: dict = {}
 
 
 def _init_mock():
     global SCORED_ALERTS, GRAPH
     SCORED_ALERTS = score_alerts(MOCK_ALERTS)
-    GRAPH = build_correlation_graph(SCORED_ALERTS)
+    _rebuild_graph()
 
 
 def _rebuild_graph():
     global GRAPH
     GRAPH = build_correlation_graph(SCORED_ALERTS)
+    _rebuild_cases()
+
+
+def _rebuild_cases():
+    CASES.clear()
+    for alert in SCORED_ALERTS:
+        alert_id = alert["_id"]
+        if alert_id in GRAPH:
+            CASES[alert_id] = score_graph_case(GRAPH, alert_id)
+
+
+def _case_summary(case_id: str, case: dict) -> dict:
+    seed = next((a for a in SCORED_ALERTS if a["_id"] == case_id), None)
+    return {
+        "case_id": case_id,
+        "technique": case["technique"],
+        "profile_name": case["profile_name"],
+        "case_score": case["case_score"],
+        "level": case["level"],
+        "required_coverage": case["required_coverage"],
+        "nodes": case["nodes"],
+        "edges": case["edges"],
+        "seed": {
+            "timestamp": seed.get("@timestamp") if seed else None,
+            "agent": (seed.get("agent") or {}).get("name") if seed else None,
+            "rule": seed.get("rule") if seed else None,
+        },
+    }
 
 
 if not USE_LIVE:
@@ -84,29 +114,37 @@ async def wazuh_webhook(request: Request):
     # 1. Score the incoming alert
     [scored_alert] = score_alerts([alert])
 
-    # 2. Extract entities & find related events
-    entities = extract_entities(alert)
-    related_raw = query_related_events(entities)
+    # 2. Bounded typed-edge expansion over the Wazuh Indexer
+    expansion = expand_case(alert, search_pivot)
+    case = score_expansion_case(expansion)
 
-    # 3. Score related events
-    scored_related = score_alerts(related_raw) if related_raw else []
-
-    # 4. Merge into in-memory store (deduplicate by _id)
+    # 3. Merge expanded events into the in-memory store (deduplicate by id)
     global SCORED_ALERTS
     seen_ids = {a.get("_id") for a in SCORED_ALERTS}
-    for a in [scored_alert] + scored_related:
-        if a.get("_id") not in seen_ids:
-            SCORED_ALERTS.append(a)
-            seen_ids.add(a.get("_id"))
+    for node in expansion["nodes"]:
+        raw = node.get("raw") or {}
+        raw_id = raw.get("_id")
+        if raw_id and raw_id not in seen_ids:
+            SCORED_ALERTS.append(score_alerts([raw])[0])
+            seen_ids.add(raw_id)
+    if scored_alert.get("_id") and scored_alert["_id"] not in seen_ids:
+        SCORED_ALERTS.append(scored_alert)
+        seen_ids.add(scored_alert["_id"])
 
     _rebuild_graph()
+    CASES[case["case_id"]] = case
 
     return {
         "status": "processed",
         "seed_alert_id": scored_alert.get("_id"),
         "seed_score": scored_alert.get("scoring", {}).get("total_score"),
         "seed_level": scored_alert.get("scoring", {}).get("level"),
-        "related_events_found": len(scored_related),
+        "related_events_found": len(expansion["nodes"]) - 1,
+        "case_id": case["case_id"],
+        "case_score": case["case_score"],
+        "case_level": case["level"],
+        "required_coverage": case["required_coverage"],
+        "relations": expansion["stats"]["by_relation"],
     }
 
 
@@ -116,6 +154,7 @@ def health():
         "status": "ok",
         "mode": "live" if USE_LIVE else "mock",
         "alerts_count": len(SCORED_ALERTS),
+        "cases_count": len(CASES),
     }
 
 
@@ -185,6 +224,39 @@ def timeline(alert_id: str):
 
     result = build_timeline_with_edges(GRAPH, alert_id)
     return result
+
+
+@app.get("/api/cases")
+def list_cases(
+    technique: str | None = Query(None, description="Filter by MITRE technique"),
+    level: str | None = Query(None, description="Filter by case level: Low, Medium, High"),
+):
+    """List correlated cases with their aggregated actionability score."""
+    items = []
+    for case_id, case in CASES.items():
+        if technique and case["technique"] != technique:
+            continue
+        if level and case["level"] != level:
+            continue
+        items.append(_case_summary(case_id, case))
+    items.sort(key=lambda item: item["case_score"], reverse=True)
+    return {"total": len(items), "cases": items}
+
+
+@app.get("/api/cases/{case_id}")
+def case_detail(case_id: str):
+    """Full case detail: score, required coverage and per-fact evidence."""
+    case = CASES.get(case_id)
+    if case is None:
+        raise HTTPException(status_code=404, detail="Case not found")
+    seed = next((a for a in SCORED_ALERTS if a["_id"] == case_id), None)
+    return {
+        "summary": _case_summary(case_id, case),
+        "case": case,
+        "seed_alert": {
+            key: seed.get(key) for key in ("_id", "@timestamp", "agent", "rule", "mitre")
+        } if seed else None,
+    }
 
 
 @app.get("/api/stats")

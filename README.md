@@ -195,8 +195,10 @@ weights each fact by the confidence of the relationship that delivered it.
 | GET | `/api/health` | Health check + mode (mock/live) |
 | GET | `/api/alerts` | List alerts (filterable: `?technique=&level=&agent=`) |
 | GET | `/api/alerts/{id}` | Single alert detail + full scoring breakdown |
+| GET | `/api/cases` | List correlated cases with case-level actionability score |
+| GET | `/api/cases/{case_id}` | Case detail: per-fact evidence (Q, E, carriers) + required coverage |
 | GET | `/api/timeline/{id}` | Timeline graph (nodes + edges) from seed alert |
-| POST | `/api/webhook` | **Wazuh Integration webhook** — receive alert → score + find related |
+| POST | `/api/webhook` | **Wazuh Integration webhook** — alert → bounded expansion → case score |
 | GET | `/api/stats` | Aggregate statistics |
 | GET | `/docs` | Interactive Swagger documentation |
 

@@ -34,6 +34,10 @@ from ahp.core import ahp
 #     host, integrity) but does not by itself explain the activity.
 #   * IOC (hash/signature) and Network are complementary evidence; both are
 #     technique-dependent (hash for binary identity, network for T1105).
+#     Network is treated as a peer of behavioral evidence (comparison = 1)
+#     because it is the primary data source for T1105 and no other category
+#     captures external communication; this places it at ~0.15, consistent
+#     with the network/DNS weight (0.16) in the correlation design report.
 #   * Timeline metadata (event id, rule level, timestamp) is supporting
 #     context only and is deliberately the weakest category.
 CATEGORY_NAMES = ["behavioral", "relationship", "identity", "ioc", "network", "timeline"]
@@ -42,11 +46,11 @@ CATEGORY_COMPARISONS = {
     ("behavioral", "relationship"): 1,
     ("behavioral", "identity"): 3,
     ("behavioral", "ioc"): 3,
-    ("behavioral", "network"): 3,
+    ("behavioral", "network"): 1,
     ("behavioral", "timeline"): 5,
     ("relationship", "identity"): 1,
     ("relationship", "ioc"): 3,
-    ("relationship", "network"): 3,
+    ("relationship", "network"): 2,
     ("relationship", "timeline"): 5,
     ("identity", "ioc"): 1,
     ("identity", "network"): 1,
