@@ -153,8 +153,11 @@ The Vite dev server proxies `/api` requests to `http://localhost:8000` automatic
 ### Case Detail
 - Case score, required-evidence coverage and relation count
 - Evidence facts table: field, role, AHP weight, quality Q, evidence confidence E, contribution
+- "Hide missing" toggle reduces the table to present evidence
+- "Export report" downloads a Markdown case report (usable as a thesis appendix)
 - Score composition (top contributions) and typed relations (relation, confidence, decision)
-- Chronological case timeline with the seed event marked
+- Chronological case timeline with inline relation chips between related events
+- Deep links: `?view=cases&case=alert-009`, `?view=alerts&alert=alert-009`
 
 ### Alerts View
 - Per-alert AHP score for every alert, filterable by technique and level
@@ -201,7 +204,9 @@ weights each fact by the confidence of the relationship that delivered it.
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | `/api/health` | Health check + mode (mock/live) |
+| GET | `/api/health` | Health check + current source (mock/live) |
+| GET | `/api/source` | Current source, availability and config (same as health) |
+| POST | `/api/source` | Switch source at runtime: `{"source": "mock" \| "live"}` |
 | GET | `/api/alerts` | List alerts (filterable: `?technique=&level=&agent=`) |
 | GET | `/api/alerts/{id}` | Single alert detail + full scoring breakdown |
 | GET | `/api/cases` | List correlated cases with case-level actionability score |
@@ -213,7 +218,21 @@ weights each fact by the confidence of the relationship that delivered it.
 
 ---
 
-## Switching from Mock Data to Real Wazuh Indexer
+## Mock vs Live Data
+
+The data source can be switched **at runtime**:
+
+- **UI** — MOCK/LIVE toggle in the top-right header.
+- **API** — `POST /api/source` with `{"source": "mock"}` or `{"source": "live"}`.
+- **Startup default** — `USE_LIVE_WAZUH=true` in `.env` (tunable window:
+  `LIVE_HOURS_BACK`, `LIVE_ALERT_LIMIT`). If the Wazuh Indexer is unreachable
+  the backend logs the error, reports it as `last_error` and keeps serving the
+  mock source instead of starting empty.
+
+Switching to live loads the most recent alerts from the Wazuh Indexer
+(`wazuh-alerts-*`), scores them, builds the correlation graph and computes the
+case scores. The Wazuh Manager webhook (`POST /api/webhook`) additionally runs
+a bounded expansion over `wazuh-archives-*` and stores the resulting case.
 
 ### Step 1: Copy & configure .env
 
@@ -223,11 +242,13 @@ copy .env.example .env
 # Edit .env — isi WAZUH_INDEXER_PASS dengan password sebenarnya
 ```
 
-### Step 2: Set USE_LIVE_WAZUH=true
+### Step 2: Set USE_LIVE_WAZUH=true (optional startup default)
 
 Di `.env`:
 ```
 USE_LIVE_WAZUH=true
+LIVE_HOURS_BACK=48
+LIVE_ALERT_LIMIT=100
 ```
 
 ### Step 3: Restart backend

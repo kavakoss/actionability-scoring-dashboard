@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { fetchCases } from '../api'
-import { EmptyState, LevelBadge, Meter, Panel, SectionTitle, TechniqueTag, levelTone, shortId } from './ui'
+import { EmptyState, LevelBadge, Meter, Panel, SectionTitle, SkeletonRows, TechniqueTag, levelTone, shortId } from './ui'
 
 const TECH_LABELS = {
   'T1059.001': 'PowerShell',
@@ -68,6 +68,8 @@ export default function CasesView({ onSelect }) {
       >
         Correlated cases
       </SectionTitle>
+
+      {cases === null && <SkeletonRows rows={6} />}
 
       {cases && cases.length === 0 && (
         <EmptyState title="No cases match the filters" hint="Try a different technique or level." />

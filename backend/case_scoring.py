@@ -43,6 +43,9 @@ QUALITY_WEIGHTS = {
     "provenance": 0.15,
 }
 
+MAX_CONSISTENCY_CARRIERS = 3
+MAX_CONTEXT_LEAVES_PER_NODE = 5
+
 _GUID_RE = re.compile(r"^\{?[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\}?$")
 _SHA256_RE = re.compile(r"SHA256=[0-9A-Fa-f]{64}")
 
@@ -82,16 +85,32 @@ def _validity(field: str, value) -> float:
 def _node_confidence(node_id: str, seed_id: str, adjacency: dict) -> float:
     if node_id == seed_id:
         return 1.0
-    return adjacency.get(node_id, 0.5)
+    return adjacency.get(node_id, {}).get("confidence", 0.5)
+
+
+def _node_support(node_id: str, seed_id: str, adjacency: dict) -> float:
+    """Corroboration weight: identity-backed relationships count fully,
+    weak/context relationships count at half."""
+    if node_id == seed_id:
+        return 1.0
+    entry = adjacency.get(node_id)
+    if not entry:
+        return 0.25
+    factor = 1.0 if entry.get("expand") else 0.5
+    return entry.get("confidence", 0.5) * factor
 
 
 def _build_adjacency(edges: list) -> dict:
     adjacency = {}
     for edge in edges:
-        confidence = edge.get("confidence", 0.0)
+        entry = {
+            "confidence": edge.get("confidence", 0.0),
+            "expand": bool(edge.get("expand")),
+        }
         for endpoint in (edge["source"], edge["target"]):
-            if confidence > adjacency.get(endpoint, 0.0):
-                adjacency[endpoint] = confidence
+            current = adjacency.get(endpoint)
+            if current is None or entry["confidence"] > current["confidence"]:
+                adjacency[endpoint] = entry
     return adjacency
 
 
@@ -143,16 +162,21 @@ def score_case(nodes: list, edges: list, seed_id: str, technique: str | None = N
 
             # Consistency is confidence-weighted corroboration: the seed fact
             # gives a 0.5 base, every correlated carrier adds 0.5 x the
-            # confidence of the relationship that delivered it.
+            # confidence of the relationship that delivered it. Only the three
+            # strongest carriers count, so a crowd of weak context events
+            # cannot push consistency to 1.0.
             consistency = 0.0
             if carriers:
                 base = 0.5 if any(c["node"]["id"] == seed_id for c in carriers) else 0.0
-                support = sum(
-                    _node_confidence(c["node"]["id"], seed_id, adjacency)
-                    for c in carriers
-                    if c["node"]["id"] != seed_id
-                )
-                consistency = min(1.0, base + 0.5 * support)
+                supports = sorted(
+                    (
+                        _node_support(c["node"]["id"], seed_id, adjacency)
+                        for c in carriers
+                        if c["node"]["id"] != seed_id
+                    ),
+                    reverse=True,
+                )[:MAX_CONSISTENCY_CARRIERS]
+                consistency = min(1.0, base + 0.5 * sum(supports))
 
             quality = (
                 QUALITY_WEIGHTS["completeness"] * completeness
@@ -192,6 +216,10 @@ def score_case(nodes: list, edges: list, seed_id: str, technique: str | None = N
                         "relation_confidence": round(
                             _node_confidence(carrier["node"]["id"], seed_id, adjacency), 4
                         ),
+                        "identity_backed": bool(
+                            carrier["node"]["id"] == seed_id
+                            or adjacency.get(carrier["node"]["id"], {}).get("expand")
+                        ),
                     }
                     for carrier in carriers
                 ],
@@ -220,7 +248,10 @@ def case_from_graph(graph, seed_id: str, max_depth: int = 3) -> tuple:
 
     Mirrors ``correlation.build_timeline_with_edges``: identity-backed edges are
     traversed up to ``max_depth``; weak/context edges contribute their
-    endpoints as leaves but are never expanded from.
+    endpoints as leaves but are never expanded from. At most
+    ``MAX_CONTEXT_LEAVES_PER_NODE`` context neighbours per node are kept
+    (highest confidence first) so same-user/same-host context cannot flood the
+    case on busy endpoints.
     """
     from collections import deque
 
@@ -233,8 +264,19 @@ def case_from_graph(graph, seed_id: str, max_depth: int = 3) -> tuple:
 
     while queue:
         node_id, depth = queue.popleft()
+        identity_neighbors = []
+        context_neighbors = []
         for neighbor in graph.neighbors(node_id):
             data = graph.get_edge_data(node_id, neighbor) or {}
+            if data.get("expand"):
+                identity_neighbors.append((data, neighbor))
+            else:
+                context_neighbors.append((data, neighbor))
+
+        context_neighbors.sort(key=lambda item: item[0].get("confidence", 0.0), reverse=True)
+        selected = identity_neighbors + context_neighbors[:MAX_CONTEXT_LEAVES_PER_NODE]
+
+        for data, neighbor in selected:
             key = tuple(sorted((node_id, neighbor)))
             if key not in edges:
                 edges[key] = {**data, "source": node_id, "target": neighbor}

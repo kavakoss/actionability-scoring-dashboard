@@ -39,3 +39,14 @@ export async function fetchHealth() {
   const res = await fetch(`${BASE}/health`)
   return res.json()
 }
+
+export async function setSource(source) {
+  const res = await fetch(`${BASE}/source`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ source }),
+  })
+  const data = await res.json()
+  if (!res.ok) throw new Error(data.detail || 'Failed to switch source')
+  return data
+}

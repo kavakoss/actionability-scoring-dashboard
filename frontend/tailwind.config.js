@@ -10,8 +10,8 @@ export default {
         edge: '#1F2937',
         ink: {
           DEFAULT: '#E5E7EB',
-          muted: '#94A3B8',
-          faint: '#64748B',
+          muted: '#9AA7B8',
+          faint: '#7C8A9C',
         },
         accent: '#3B82F6',
         sev: {

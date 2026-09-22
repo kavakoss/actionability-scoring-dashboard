@@ -78,7 +78,13 @@ def test_repeated_evidence_is_deduplicated_and_capped():
         clone["timestamp"] = f"2026-09-22T14:36:0{index}.000Z"
 
     edges = [
-        {"source": seed["id"], "target": clone["id"], "relation": "SUPPORTING_CONTEXT", "confidence": 0.6}
+        {
+            "source": seed["id"],
+            "target": clone["id"],
+            "relation": "SAME_PROCESS",
+            "confidence": 0.9,
+            "expand": True,
+        }
         for clone in clones
     ]
     result = score_case([seed] + clones, edges, seed["id"])
@@ -88,6 +94,56 @@ def test_repeated_evidence_is_deduplicated_and_capped():
     assert destination["completeness"] == 1.0
     assert destination["consistency"] == 1.0
     assert destination["contribution"] < destination["weight"] * 1.0 + 1e-9
+
+
+def test_weak_context_corroboration_is_discounted():
+    from case_scoring import score_case as score
+
+    seed = normalize_alert(network_event())
+    clone = normalize_alert(network_event())
+    clone["id"] = "weak-clone"
+    clone["timestamp"] = "2026-09-22T14:36:04.000Z"
+    edges = [
+        {
+            "source": seed["id"],
+            "target": clone["id"],
+            "relation": "SUPPORTING_CONTEXT",
+            "confidence": 0.9,
+            "expand": False,
+        }
+    ]
+    result = score([seed, clone], edges, seed["id"])
+    destination = next(fact for fact in result["facts"] if fact["field"] == "destinationIp")
+    assert destination["consistency"] < 0.8
+    assert destination["carriers"][1]["identity_backed"] is False
+
+
+def test_context_leaves_are_capped():
+    import networkx as nx
+
+    from case_scoring import MAX_CONTEXT_LEAVES_PER_NODE, case_from_graph
+    from correlation import build_correlation_graph
+
+    seed_raw = make_event(
+        1, "2026-09-22T10:00:00.000Z", guid="{aaaa0000-0000-0000-0000-000000000001}",
+        image=r"C:\seed.exe", user="x\\bob", command_line="seed.exe",
+    )
+    alerts = [seed_raw]
+    for index in range(8):
+        alerts.append(
+            make_event(
+                1,
+                f"2026-09-22T10:00:{index + 1:02d}.000Z",
+                guid=f"{{bbbb0000-0000-0000-0000-0000000000{index:02d}}}",
+                image=rf"C:\ctx{index}.exe",
+                user="x\\bob",
+                command_line=f"ctx{index}.exe",
+            )
+        )
+
+    graph = build_correlation_graph(alerts)
+    nodes, _ = case_from_graph(graph, normalize_alert(seed_raw)["id"])
+    assert len(nodes) <= 1 + MAX_CONTEXT_LEAVES_PER_NODE
 
 
 def test_invalid_ip_reduces_validity():

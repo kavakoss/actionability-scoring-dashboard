@@ -81,6 +81,24 @@ export function EmptyState({ title, hint }) {
   )
 }
 
+export function SkeletonRows({ rows = 5, className = '' }) {
+  return (
+    <div className={`space-y-2 p-4 ${className}`}>
+      {Array.from({ length: rows }).map((_, index) => (
+        <div key={index} className="h-6 animate-pulse rounded-sm bg-raised" />
+      ))}
+    </div>
+  )
+}
+
+export function Spinner({ className = '' }) {
+  return (
+    <span
+      className={`inline-block h-3 w-3 animate-spin rounded-full border border-ink-faint border-t-transparent ${className}`}
+    />
+  )
+}
+
 export function KeyValue({ label, children, mono = false }) {
   return (
     <div>
