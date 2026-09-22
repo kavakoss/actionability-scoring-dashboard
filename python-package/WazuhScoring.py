@@ -1,4 +1,4 @@
-from opensearch import OpenSearch
+from opensearchpy import OpenSearch
 import math
 
 class WazuhScoring:
@@ -64,5 +64,5 @@ class WazuhScoring:
         else:
             return 5
 
-    def get_noise_socre(self, index: str, field: str, value: str) -> int:
+    def get_noise_score(self, index: str, field: str, value: str) -> int:
         pass
