@@ -2,31 +2,52 @@
 @tailwind components;
 @tailwind utilities;
 
+html,
+body,
+#root {
+  height: 100%;
+}
+
 body {
-  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  background: #0b0f14;
+  color: #e5e7eb;
+  font-family: Inter, ui-sans-serif, system-ui, 'Segoe UI', Roboto, sans-serif;
+  font-size: 13px;
+  -webkit-font-smoothing: antialiased;
 }
 
-.timeline-line {
-  position: relative;
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
 }
 
-.timeline-line::before {
-  content: '';
-  position: absolute;
-  left: 20px;
-  top: 0;
-  bottom: 0;
-  width: 3px;
-  background: linear-gradient(to bottom, #f59e0b, #ef4444, #8b5cf6);
-  border-radius: 2px;
+::-webkit-scrollbar-track {
+  background: #0b0f14;
 }
 
-.glass {
-  background: rgba(30, 41, 59, 0.8);
-  backdrop-filter: blur(10px);
-  border: 1px solid rgba(148, 163, 184, 0.1);
+::-webkit-scrollbar-thumb {
+  background: #26303d;
+  border: 2px solid #0b0f14;
+  border-radius: 6px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #334155;
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
 }
 
 .score-bar {
-  transition: width 0.6s ease;
+  transition: width 0.35s ease;
+}
+
+.row-link {
+  border-bottom: 1px solid rgba(31, 41, 55, 0.7);
+  transition: background-color 0.15s ease;
+}
+
+.row-link:hover {
+  background: #141b24;
 }

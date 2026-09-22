@@ -145,23 +145,32 @@ The Vite dev server proxies `/api` requests to `http://localhost:8000` automatic
 
 ## Usage Walkthrough
 
-### Dashboard View (default)
-- See all 8 mock alerts across 3 MITRE techniques
-- Filter by technique (T1059.001 / T1059.003 / T1105)
-- Filter by actionability level (Low / Medium / High)
-- Click any alert row → see detailed scoring breakdown
+### Cases View (default)
+- Correlated cases ranked by case-level actionability score
+- Filter by technique and level; each row shows required-evidence coverage and graph size
+- Click a case row → case detail
 
-### Alert Detail
-- Shows per-category score breakdown (Identity, Behavioral, Relationship, IOC, Network, Timeline)
-- Each category shows which fields are present/absent
-- "View Attack Timeline" button → reconstruct timeline from this alert
+### Case Detail
+- Case score, required-evidence coverage and relation count
+- Evidence facts table: field, role, AHP weight, quality Q, evidence confidence E, contribution
+- Score composition (top contributions) and typed relations (relation, confidence, decision)
+- Chronological case timeline with the seed event marked
 
-### Timeline View
-- Select a seed alert from dropdown
-- System builds correlation graph using BFS traversal
-- Connected events shown in chronological vertical timeline
-- Right panel shows correlation edges with weights
-- Color-coded by MITRE technique
+### Alerts View
+- Per-alert AHP score for every alert, filterable by technique and level
+- Click an alert → field-level breakdown per category with expected/required roles
+
+### Manual development run
+
+```bash
+# terminal 1 — backend (mock data unless USE_LIVE_WAZUH=true)
+cd backend && python main.py                 # http://localhost:8000
+
+# terminal 2 — frontend dev server
+cd frontend && npm install && npm run dev    # http://localhost:3000, proxies /api to :8000
+```
+
+Set `VITE_API_TARGET` if the backend runs elsewhere.
 
 ---
 

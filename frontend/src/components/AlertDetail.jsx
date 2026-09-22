@@ -1,120 +1,133 @@
-import { useState, useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { fetchAlertDetail } from '../api'
+import { Dot, KeyValue, LevelBadge, Meter, Panel, SectionTitle, TechniqueTag, levelTone } from './ui'
 
-const catColors = {
-  identity: '#8b5cf6',
-  behavioral: '#ec4899',
-  relationship: '#f59e0b',
-  ioc: '#06b6d4',
-  network: '#10b981',
-  timeline: '#6b7280',
+const TECH_LABELS = {
+  'T1059.001': 'PowerShell',
+  'T1059.003': 'CMD',
+  'T1105': 'Ingress Transfer',
 }
 
-export default function AlertDetail({ alertId, onBack, onShowTimeline }) {
+const ROLE_TONE = {
+  required: 'text-accent border-accent/40',
+  supporting: 'text-ink-muted border-edge',
+  context: 'text-ink-faint border-edge',
+}
+
+function formatTime(value) {
+  if (!value) return '-'
+  return new Date(value).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'medium' })
+}
+
+export default function AlertDetail({ alertId, onBack, onOpenCase }) {
   const [detail, setDetail] = useState(null)
 
   useEffect(() => {
-    fetchAlertDetail(alertId).then(setDetail)
+    setDetail(null)
+    fetchAlertDetail(alertId).then(setDetail).catch(() => setDetail(null))
   }, [alertId])
 
-  if (!detail) return <p className="text-slate-400 text-center py-12">Loading...</p>
+  if (!detail) {
+    return <p className="py-10 text-center text-sm text-ink-faint">Loading alert…</p>
+  }
 
-  const s = detail.scoring
-  const m = detail.mitre
-  const r = detail.rule
+  const scoring = detail.scoring
+  const mitre = detail.mitre || {}
+  const rule = detail.rule || {}
 
   return (
-    <div>
-      <button
-        onClick={onBack}
-        className="mb-4 text-sm text-amber-400 hover:text-amber-300 transition"
-      >
+    <div className="space-y-4">
+      <button onClick={onBack} className="text-xs text-accent hover:text-blue-400">
         ← Back to alerts
       </button>
 
-      {/* Alert Summary */}
-      <div className="glass rounded-xl p-6 mb-6">
-        <div className="flex items-start justify-between flex-wrap gap-4">
-          <div>
-            <h2 className="text-lg font-bold text-white">{m.name} ({m.technique})</h2>
-            <p className="text-sm text-slate-400 mt-1">{r.description}</p>
-            <div className="flex gap-3 mt-3 text-xs">
-              <span className="text-slate-400">Agent: <span className="text-slate-200">{detail.agent?.name}</span></span>
-              <span className="text-slate-400">Tactic: <span className="text-slate-200">{m.tactic}</span></span>
-              <span className="text-slate-400">Rule Level: <span className="text-slate-200">{r.level}</span></span>
-              <span className="text-slate-400">Time: <span className="text-slate-200 font-mono">{new Date(detail.timestamp).toLocaleString()}</span></span>
-            </div>
+      <Panel>
+        <div className="flex flex-wrap items-start justify-between gap-4 p-4">
+          <div className="min-w-0">
+            <TechniqueTag
+              technique={mitre.technique}
+              label={`${mitre.technique || 'Unknown'} · ${TECH_LABELS[mitre.technique] || mitre.name || '-'}`}
+            />
+            <h1 className="mt-2 text-base font-semibold text-ink">{rule.description || 'Wazuh alert'}</h1>
+            <dl className="mt-3 grid grid-cols-2 gap-x-8 gap-y-3 md:grid-cols-4">
+              <KeyValue label="Agent">{detail.agent?.name || '-'}</KeyValue>
+              <KeyValue label="Tactic">{mitre.tactic || '-'}</KeyValue>
+              <KeyValue label="Rule level" mono>
+                {rule.level ?? '-'}
+              </KeyValue>
+              <KeyValue label="Time" mono>
+                {formatTime(detail.timestamp)}
+              </KeyValue>
+            </dl>
           </div>
-
           <div className="text-right">
-            <p className="text-4xl font-bold text-white">{s.total_score}</p>
-            <p className="text-sm text-slate-400">of {s.max_score} max</p>
-            <span className={`inline-block mt-2 px-3 py-1 rounded-full text-sm font-bold ${
-              s.level === 'High' ? 'bg-red-500/20 text-red-300 border border-red-500/30'
-              : s.level === 'Medium' ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
-              : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-            }`}>
-              {s.level} Actionability ({s.percentage}%)
-            </span>
+            <div className="tabular text-4xl font-semibold text-ink">{scoring.total_score}</div>
+            <div className="mt-1 flex items-center justify-end gap-2">
+              <LevelBadge level={scoring.level} />
+              <span className="text-2xs text-ink-faint">alert actionability</span>
+            </div>
+            <div className="mt-1 text-2xs text-ink-faint">{scoring.profile_name}</div>
+            <button
+              onClick={() => onOpenCase(alertId)}
+              className="mt-3 rounded border border-edge px-2 py-1 text-2xs text-ink-muted hover:border-accent hover:text-accent"
+            >
+              Open correlated case
+            </button>
           </div>
         </div>
+      </Panel>
 
-        <button
-          onClick={() => onShowTimeline(alertId)}
-          className="mt-4 px-4 py-2 bg-amber-500/20 text-amber-300 border border-amber-500/30 rounded-lg text-sm font-medium hover:bg-amber-500/30 transition"
-        >
-          🕐 View Attack Timeline →
-        </button>
-      </div>
-
-      {/* Category Breakdown */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {Object.entries(s.categories || {}).map(([key, cat]) => (
-          <div key={key} className="glass rounded-xl p-4">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-sm font-bold text-white">{cat.label}</h3>
-              <span className="text-sm font-mono text-slate-300">
-                {cat.score}/{cat.max} ({cat.percentage}%)
-              </span>
-            </div>
-
-            {/* Progress bar */}
-            <div className="w-full h-2 bg-slate-700 rounded-full mb-3 overflow-hidden">
-              <div
-                className="h-full rounded-full score-bar"
-                style={{
-                  width: `${cat.percentage}%`,
-                  backgroundColor: catColors[key] || '#6b7280',
-                }}
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+        {Object.entries(scoring.categories || {}).map(([key, category]) => (
+          <Panel key={key}>
+            <SectionTitle
+              right={
+                <span className="tabular text-2xs text-ink-muted">
+                  {category.applicable ? `${category.score.toFixed(2)} / ${category.max.toFixed(2)}` : 'n/a'}
+                </span>
+              }
+            >
+              {category.label}
+            </SectionTitle>
+            <div className="px-4 pt-3">
+              <Meter
+                value={category.applicable ? category.percentage : 0}
+                tone={levelTone(scoring.level)}
               />
             </div>
-
-            {/* Field details */}
-            <div className="space-y-2">
-              {cat.fields?.map(field => (
-                <div key={field.field} className="text-xs">
-                  <div className="flex items-center justify-between">
-                    <span className={`${field.present ? 'text-slate-200' : 'text-slate-600'}`}>
-                      {field.present ? '✓' : '✗'} {field.field}
-                      <span className="text-slate-500 ml-1">
-                        (AHP {field.weight})
+            <ul className="divide-y divide-edge/60 px-4 pb-3 pt-2">
+              {category.fields?.map((field) => (
+                <li key={field.field} className={`py-2 ${field.expected ? '' : 'opacity-45'}`}>
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex min-w-0 items-start gap-2">
+                      <span className="mt-1">
+                        <Dot on={field.present} tone={field.present ? 'bg-accent' : 'bg-edge'} />
                       </span>
-                    </span>
-                    {field.present && field.value && (
-                      <span className="text-slate-400 font-mono ml-2 truncate max-w-[180px]" title={field.value}>
-                        {field.value}
-                      </span>
-                    )}
-                  </div>
-                  {field.mitre_relationship && (
-                    <div className="text-[10px] text-slate-600 mt-0.5 ml-5">
-                      MITRE: {field.mitre_relationship} · {field.ahp_level}
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-ink">{field.label}</span>
+                          {field.expected && (
+                            <span
+                              className={`rounded border px-1 text-2xs ${
+                                ROLE_TONE[field.role] || ROLE_TONE.context
+                              }`}
+                            >
+                              {field.role}
+                            </span>
+                          )}
+                        </div>
+                        <div className="mt-0.5 truncate font-mono text-2xs text-ink-faint" title={field.value || ''}>
+                          {field.present ? field.value : 'missing'}
+                        </div>
+                        <div className="mt-0.5 text-2xs text-ink-faint">{field.mitre_component}</div>
+                      </div>
                     </div>
-                  )}
-                </div>
+                    <span className="tabular shrink-0 text-2xs text-ink-faint">{field.weight.toFixed(3)}</span>
+                  </div>
+                </li>
               ))}
-            </div>
-          </div>
+            </ul>
+          </Panel>
         ))}
       </div>
     </div>

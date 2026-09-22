@@ -1,49 +1,51 @@
+import { Panel } from './ui'
+
+const LEVEL_TONE = {
+  Low: 'text-sev-low',
+  Medium: 'text-sev-medium',
+  High: 'text-sev-high',
+}
+
+const TECH_LABEL = {
+  'T1059.001': 'PowerShell',
+  'T1059.003': 'CMD',
+  'T1105': 'Ingress Transfer',
+}
+
+function Tile({ label, value, hint, valueClass = 'text-ink' }) {
+  return (
+    <Panel className="px-4 py-3">
+      <p className="text-2xs uppercase tracking-wider text-ink-faint">{label}</p>
+      <p className={`tabular mt-1 text-2xl font-semibold ${valueClass}`}>{value}</p>
+      {hint && <p className="mt-0.5 text-2xs text-ink-faint">{hint}</p>}
+    </Panel>
+  )
+}
+
 export default function StatsOverview({ stats }) {
   if (!stats) return null
 
-  const { total_alerts, by_level, by_technique } = stats
-
-  const levelColors = { Low: 'bg-emerald-500', Medium: 'bg-amber-500', High: 'bg-red-500' }
-  const techColors = {
-    'T1059.001': 'bg-violet-500',
-    'T1059.003': 'bg-cyan-500',
-    'T1105': 'bg-rose-500',
-  }
+  const { total_alerts, by_level = {}, by_technique = {} } = stats
 
   return (
-    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-      {/* Total Alerts */}
-      <div className="glass rounded-xl p-4">
-        <p className="text-sm text-slate-400">Total Alerts</p>
-        <p className="text-3xl font-bold text-white">{total_alerts}</p>
-        <p className="text-xs text-slate-500">3 MITRE Techniques</p>
-      </div>
-
-      {/* Level Distribution */}
-      {Object.entries(by_level).map(([level, count]) => (
-        <div key={level} className="glass rounded-xl p-4">
-          <p className="text-sm text-slate-400">{level} Actionability</p>
-          <div className="flex items-center gap-3 mt-1">
-            <span className={`w-3 h-3 rounded-full ${levelColors[level] || 'bg-slate-500'}`} />
-            <p className="text-3xl font-bold text-white">{count}</p>
-          </div>
-          <p className="text-xs text-slate-500">
-            {total_alerts > 0 ? Math.round(count / total_alerts * 100) : 0}% of total
-          </p>
-        </div>
+    <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7">
+      <Tile label="Alerts" value={total_alerts} hint="scored events" />
+      {['High', 'Medium', 'Low'].map((level) => (
+        <Tile
+          key={level}
+          label={`${level} actionability`}
+          value={by_level[level] ?? 0}
+          hint={total_alerts ? `${Math.round(((by_level[level] ?? 0) / total_alerts) * 100)}% of total` : '-'}
+          valueClass={LEVEL_TONE[level]}
+        />
       ))}
-
-      {/* Per-Technique Average Score */}
-      {Object.entries(by_technique || {}).map(([tech, data]) => (
-        <div key={tech} className="glass rounded-xl p-4">
-          <p className="text-sm text-slate-400">{tech}</p>
-          <div className="flex items-center gap-2 mt-1">
-            <span className={`w-3 h-3 rounded-full ${techColors[tech] || 'bg-slate-500'}`} />
-            <p className="text-3xl font-bold text-white">{data.avg_score}</p>
-            <span className="text-xs text-slate-400">/ {data.avg_percentage}%</span>
-          </div>
-          <p className="text-xs text-slate-500">{data.count} alerts</p>
-        </div>
+      {Object.entries(by_technique).map(([technique, data]) => (
+        <Tile
+          key={technique}
+          label={TECH_LABEL[technique] || technique}
+          value={data.avg_percentage != null ? `${data.avg_percentage}%` : data.avg_score}
+          hint={`${data.count} alerts · avg`}
+        />
       ))}
     </div>
   )

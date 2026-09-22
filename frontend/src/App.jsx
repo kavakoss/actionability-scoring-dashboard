@@ -1,24 +1,37 @@
-import { useState, useEffect } from 'react'
-import StatsOverview from './components/StatsOverview'
+import { useEffect, useState } from 'react'
+import CasesView from './components/CasesView'
+import CaseDetail from './components/CaseDetail'
 import ScoringDashboard from './components/ScoringDashboard'
 import AlertDetail from './components/AlertDetail'
-import TimelineView from './components/TimelineView'
-import { fetchAlerts, fetchStats } from './api'
+import StatsOverview from './components/StatsOverview'
+import { fetchAlerts, fetchHealth, fetchStats } from './api'
+import { Badge } from './components/ui'
+
+const TABS = [
+  ['cases', 'Cases'],
+  ['alerts', 'Alerts'],
+]
 
 export default function App() {
-  const [view, setView] = useState('dashboard')
+  const [view, setView] = useState('cases')
+  const [selectedCaseId, setSelectedCaseId] = useState(null)
   const [selectedAlertId, setSelectedAlertId] = useState(null)
   const [alerts, setAlerts] = useState([])
   const [stats, setStats] = useState(null)
+  const [health, setHealth] = useState(null)
   const [filters, setFilters] = useState({})
 
   useEffect(() => {
-    fetchAlerts(filters).then(d => setAlerts(d.alerts || d))
+    fetchHealth().then(setHealth).catch(() => setHealth(null))
+  }, [])
+
+  useEffect(() => {
+    fetchAlerts(filters).then((data) => setAlerts(data.alerts || []))
     fetchStats().then(setStats)
   }, [filters])
 
   const handleFilter = (key, value) => {
-    setFilters(prev => {
+    setFilters((prev) => {
       const next = { ...prev }
       if (value) next[key] = value
       else delete next[key]
@@ -26,67 +39,92 @@ export default function App() {
     })
   }
 
+  const openCase = (id) => {
+    setView('cases')
+    setSelectedCaseId(id)
+    setSelectedAlertId(null)
+  }
+
+  const openAlert = (id) => {
+    setView('alerts')
+    setSelectedAlertId(id)
+    setSelectedCaseId(null)
+  }
+
   return (
-    <div className="min-h-screen bg-slate-900">
-      {/* Header */}
-      <header className="glass sticky top-0 z-50 border-b border-slate-700/50 px-6 py-4">
-        <div className="max-w-7xl mx-auto flex items-center justify-between">
-          <div>
-            <h1 className="text-xl font-bold text-amber-400">
-              ⚡ Actionability Scoring Dashboard
-            </h1>
-            <p className="text-sm text-slate-400">
-              Wazuh SIEM · MITRE ATT&CK · Graph Correlation
-            </p>
+    <div className="min-h-screen">
+      <header className="sticky top-0 z-50 border-b border-edge bg-base/95 backdrop-blur-[2px]">
+        <div className="mx-auto flex h-14 max-w-[1600px] items-center justify-between px-5">
+          <div className="flex items-center gap-3">
+            <span className="flex h-7 w-7 items-center justify-center rounded border border-edge bg-panel">
+              <svg viewBox="0 0 24 24" className="h-4 w-4 text-accent" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M3 12h4l2-5 4 10 2-5h6" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </span>
+            <div>
+              <h1 className="text-sm font-semibold text-ink">Actionability Scoring</h1>
+              <p className="text-2xs text-ink-faint">Wazuh / Sysmon telemetry quality</p>
+            </div>
+            <nav className="ml-6 flex h-14 items-end gap-1">
+              {TABS.map(([value, label]) => (
+                <button
+                  key={value}
+                  onClick={() => {
+                    setView(value)
+                    setSelectedCaseId(null)
+                    setSelectedAlertId(null)
+                  }}
+                  className={`h-14 border-b-2 px-3 text-xs font-medium transition-colors ${
+                    view === value
+                      ? 'border-accent text-ink'
+                      : 'border-transparent text-ink-faint hover:text-ink-muted'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </nav>
           </div>
-          <nav className="flex gap-2">
-            {[
-              ['dashboard', '📊 Dashboard'],
-              ['timeline', '🕐 Timeline'],
-            ].map(([v, label]) => (
-              <button
-                key={v}
-                onClick={() => { setView(v); setSelectedAlertId(null) }}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
-                  view === v
-                    ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
-                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
-                }`}
-              >
-                {label}
-              </button>
-            ))}
-          </nav>
+          <div className="flex items-center gap-2">
+            {health && (
+              <Badge className={health.mode === 'live' ? 'border-sev-low/40 text-sev-low' : 'border-edge text-ink-faint'}>
+                {health.mode === 'live' ? 'LIVE' : 'MOCK'}
+              </Badge>
+            )}
+            {health && (
+              <span className="tabular text-2xs text-ink-faint">
+                {health.alerts_count} alerts · {health.cases_count} cases
+              </span>
+            )}
+          </div>
         </div>
       </header>
 
-      {/* Main Content */}
-      <main className="max-w-7xl mx-auto p-6">
-        {stats && <StatsOverview stats={stats} />}
-
-        {view === 'dashboard' && !selectedAlertId && (
-          <ScoringDashboard
-            alerts={alerts}
-            filters={filters}
-            onFilter={handleFilter}
-            onSelect={id => setSelectedAlertId(id)}
-          />
+      <main className="mx-auto max-w-[1600px] space-y-4 p-5">
+        {view === 'cases' && !selectedCaseId && <CasesView onSelect={openCase} />}
+        {view === 'cases' && selectedCaseId && (
+          <CaseDetail caseId={selectedCaseId} onBack={() => setSelectedCaseId(null)} onOpenAlert={openAlert} />
         )}
 
-        {view === 'dashboard' && selectedAlertId && (
-          <AlertDetail
-            alertId={selectedAlertId}
-            onBack={() => setSelectedAlertId(null)}
-            onShowTimeline={id => { setSelectedAlertId(id); setView('timeline') }}
-          />
-        )}
-
-        {view === 'timeline' && (
-          <TimelineView
-            alerts={alerts}
-            seedId={selectedAlertId}
-            onSelectSeed={id => setSelectedAlertId(id)}
-          />
+        {view === 'alerts' && (
+          <>
+            {!selectedAlertId && <StatsOverview stats={stats} />}
+            {!selectedAlertId && (
+              <ScoringDashboard
+                alerts={alerts}
+                filters={filters}
+                onFilter={handleFilter}
+                onSelect={openAlert}
+              />
+            )}
+            {selectedAlertId && (
+              <AlertDetail
+                alertId={selectedAlertId}
+                onBack={() => setSelectedAlertId(null)}
+                onOpenCase={openCase}
+              />
+            )}
+          </>
         )}
       </main>
     </div>
