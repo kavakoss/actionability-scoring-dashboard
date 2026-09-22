@@ -40,8 +40,17 @@ docker-compose down
 dashboard/
 ├── backend/
 │   ├── main.py           # FastAPI server
-│   ├── scoring.py        # Actionability scoring engine (AHP + MITRE)
-│   ├── correlation.py    # Graph-based correlation + BFS
+│   ├── scoring.py        # AHP actionability scoring (technique-aware)
+│   ├── correlation.py    # Typed-edge correlation + bounded BFS
+│   ├── normalizer.py     # Canonical Wazuh/Sysmon schema (OSSEM-referenced)
+│   ├── field_metadata.py # Wazuh path -> OSSEM -> MITRE component mapping
+│   ├── technique_profiles.py  # Expected fields per ATT&CK technique
+│   ├── ahp/              # Pairwise matrices + weight generation
+│   ├── data/             # Generated artifacts (traceability CSV)
+│   ├── weights.json      # Generated AHP weights (single source of truth)
+│   ├── AHP_RESULTS.md    # Full matrix/CR report for the thesis appendix
+│   ├── live_demo.py      # Bounded live case expansion demo
+│   ├── tests/            # pytest suite (AHP, normalization, correlation, scoring)
 │   ├── wazuh_client.py   # OpenSearch client (live mode)
 │   ├── mock_data.py      # Mock Wazuh alerts (3 MITRE techniques)
 │   ├── .env.example      # Environment template
@@ -153,6 +162,29 @@ The Vite dev server proxies `/api` requests to `http://localhost:8000` automatic
 - Connected events shown in chronological vertical timeline
 - Right panel shows correlation edges with weights
 - Color-coded by MITRE technique
+
+---
+
+## Scoring Model (AHP, technique-aware)
+
+Weights are generated from the pairwise matrices in `backend/ahp/matrices.py`
+and stored in `backend/weights.json` (single source of truth):
+
+```bash
+cd backend
+python -m ahp.run_ahp   # regenerates weights.json, AHP_RESULTS.md, data/mitre_traceability.csv
+```
+
+- `w_f = category_weight x local_field_weight` (global weight of a field)
+- `S_alert = 100 x SUM(w_f * A_f) / SUM(w_f)` over the technique's expected
+  fields (`technique_profiles.py`), where `A_f = 1` if the field is present.
+- Levels: Low < 25, Medium 25-50, High > 50 (provisional; calibrated during
+  the sensitivity evaluation).
+- All matrices must satisfy CR < 0.10; this is enforced by `tests/test_ahp.py`.
+
+Correlation (typed edges + confidence) runs on the normalized schema produced
+by `normalizer.py`; the case-level score aggregates deduplicated evidence and
+weights each fact by the confidence of the relationship that delivered it.
 
 ---
 

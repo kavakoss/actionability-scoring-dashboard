@@ -1,0 +1,321 @@
+{
+  "generated_at": "2026-09-22T15:55:20+00:00",
+  "method": "AHP (Saaty 1-9 scale), column-normalized priority vector; consistency required: CR < 0.10 (Saaty, 1980)",
+  "matrices_source": "ahp/matrices.py",
+  "category_matrix": {
+    "weight": {
+      "behavioral": 0.309653,
+      "relationship": 0.263357,
+      "identity": 0.157206,
+      "ioc": 0.113319,
+      "network": 0.113319,
+      "timeline": 0.043148
+    },
+    "lambda_max": 6.191873,
+    "ci": 0.038375,
+    "cr": 0.030947,
+    "consistent": true
+  },
+  "categories": {
+    "behavioral": {
+      "label": "Behavioral / Intent",
+      "weight": 0.309653,
+      "lambda_max": 4.156451,
+      "ci": 0.05215,
+      "cr": 0.057945,
+      "consistent": true,
+      "fields": {
+        "commandLine": {
+          "label": "Command Line",
+          "path": "data.win.eventdata.commandLine",
+          "ossem": "process_command_line",
+          "mitre_component": "Command: Command Execution (DS0017)",
+          "mitre_relationship": "direct \u2014 REQUIRED for execution analysis",
+          "local_weight": 0.675,
+          "global_weight": 0.209016,
+          "rank": 1
+        },
+        "currentDirectory": {
+          "label": "Current Directory",
+          "path": "data.win.eventdata.currentDirectory",
+          "ossem": "process_current_directory",
+          "mitre_component": "Process: Process Metadata",
+          "mitre_relationship": "indirect \u2014 attacker workspace context",
+          "local_weight": 0.132143,
+          "global_weight": 0.040918,
+          "rank": 2
+        },
+        "originalFileName": {
+          "label": "Original File Name",
+          "path": "data.win.eventdata.originalFileName",
+          "ossem": null,
+          "mitre_component": "Process: Process Metadata (binary metadata)",
+          "mitre_relationship": "indirect \u2014 masquerading check",
+          "local_weight": 0.132143,
+          "global_weight": 0.040918,
+          "rank": 3
+        },
+        "description": {
+          "label": "File Description",
+          "path": "data.win.eventdata.description",
+          "ossem": "process_file_description",
+          "mitre_component": "Process: Process Metadata",
+          "mitre_relationship": "tangential \u2014 binary metadata",
+          "local_weight": 0.060714,
+          "global_weight": 0.0188,
+          "rank": 4
+        }
+      }
+    },
+    "relationship": {
+      "label": "Relationship / Process Chain",
+      "weight": 0.263357,
+      "lambda_max": 5.072472,
+      "ci": 0.018118,
+      "cr": 0.016177,
+      "consistent": true,
+      "fields": {
+        "parentImage": {
+          "label": "Parent Image",
+          "path": "data.win.eventdata.parentImage",
+          "ossem": "process_parent_file_path",
+          "mitre_component": "Process: Process Creation (DC0032)",
+          "mitre_relationship": "direct \u2014 REQUIRED for lineage",
+          "local_weight": 0.445328,
+          "global_weight": 0.11728,
+          "rank": 1
+        },
+        "parentCommandLine": {
+          "label": "Parent Command Line",
+          "path": "data.win.eventdata.parentCommandLine",
+          "ossem": "process_parent_command_line",
+          "mitre_component": "Process: Process Creation (DC0032)",
+          "mitre_relationship": "direct \u2014 strongly correlated for chain analysis",
+          "local_weight": 0.214614,
+          "global_weight": 0.05652,
+          "rank": 2
+        },
+        "parentProcessId": {
+          "label": "Parent Process ID",
+          "path": "data.win.eventdata.parentProcessId",
+          "ossem": "process_parent_id",
+          "mitre_component": "Process: Process Creation (DC0032)",
+          "mitre_relationship": "direct \u2014 volatile hierarchy link",
+          "local_weight": 0.071864,
+          "global_weight": 0.018926,
+          "rank": 4
+        },
+        "processGuid": {
+          "label": "Process GUID",
+          "path": "data.win.eventdata.processGuid",
+          "ossem": "process_guid",
+          "mitre_component": "Process: Process Creation (DC0032)",
+          "mitre_relationship": "direct \u2014 unique cross-event tracking",
+          "local_weight": 0.061793,
+          "global_weight": 0.016274,
+          "rank": 5
+        },
+        "parentProcessGuid": {
+          "label": "Parent Process GUID",
+          "path": "data.win.eventdata.parentProcessGuid",
+          "ossem": "process_parent_guid",
+          "mitre_component": "Process: Process Creation (DC0032)",
+          "mitre_relationship": "direct \u2014 strongest lineage pivot (PID-reuse safe)",
+          "local_weight": 0.206402,
+          "global_weight": 0.054357,
+          "rank": 3
+        }
+      }
+    },
+    "identity": {
+      "label": "Identity",
+      "weight": 0.157206,
+      "lambda_max": 5.128301,
+      "ci": 0.032075,
+      "cr": 0.028639,
+      "consistent": true,
+      "fields": {
+        "image": {
+          "label": "Process Image",
+          "path": "data.win.eventdata.image",
+          "ossem": "process_file_path",
+          "mitre_component": "Process: Process Creation (DC0032)",
+          "mitre_relationship": "direct \u2014 identifies the executable",
+          "local_weight": 0.464141,
+          "global_weight": 0.072966,
+          "rank": 1
+        },
+        "processId": {
+          "label": "Process ID",
+          "path": "data.win.eventdata.processId",
+          "ossem": "process_id",
+          "mitre_component": "Process: Process Metadata",
+          "mitre_relationship": "indirect \u2014 volatile identifier",
+          "local_weight": 0.201732,
+          "global_weight": 0.031713,
+          "rank": 2
+        },
+        "user": {
+          "label": "User Context",
+          "path": "data.win.eventdata.user",
+          "ossem": "user_name",
+          "mitre_component": "Process: Process Metadata (owner)",
+          "mitre_relationship": "indirect \u2014 user context",
+          "local_weight": 0.201732,
+          "global_weight": 0.031713,
+          "rank": 3
+        },
+        "hostname": {
+          "label": "Hostname",
+          "path": "agent.name",
+          "ossem": "device_hostname",
+          "mitre_component": "endpoint attribution (no ATT&CK component)",
+          "mitre_relationship": "tangential \u2014 always available",
+          "local_weight": 0.088789,
+          "global_weight": 0.013958,
+          "rank": 4
+        },
+        "integrityLevel": {
+          "label": "Integrity Level",
+          "path": "data.win.eventdata.integrityLevel",
+          "ossem": "process_integrity_level",
+          "mitre_component": "Process: Process Metadata",
+          "mitre_relationship": "indirect \u2014 privilege indicator",
+          "local_weight": 0.043605,
+          "global_weight": 0.006855,
+          "rank": 5
+        }
+      }
+    },
+    "ioc": {
+      "label": "IOC / Threat Intelligence",
+      "weight": 0.113319,
+      "lambda_max": 3.038715,
+      "ci": 0.019357,
+      "cr": 0.033375,
+      "consistent": true,
+      "fields": {
+        "hashes": {
+          "label": "File Hash",
+          "path": "data.win.eventdata.hashes",
+          "ossem": "process_hash_sha256 / file_hash_sha256",
+          "mitre_component": "Process: Process Metadata / File: File Metadata",
+          "mitre_relationship": "direct \u2014 content identity",
+          "local_weight": 0.633346,
+          "global_weight": 0.07177,
+          "rank": 1
+        },
+        "signatureStatus": {
+          "label": "Signature Status",
+          "path": "data.win.eventdata.signatureStatus",
+          "ossem": null,
+          "mitre_component": "Process: Process Metadata (trust)",
+          "mitre_relationship": "direct \u2014 trusted/untrusted binary",
+          "local_weight": 0.260498,
+          "global_weight": 0.029519,
+          "rank": 2
+        },
+        "company": {
+          "label": "Company",
+          "path": "data.win.eventdata.company",
+          "ossem": "process_company / file_company",
+          "mitre_component": "Process: Process Metadata",
+          "mitre_relationship": "indirect \u2014 metadata cross-validation",
+          "local_weight": 0.106156,
+          "global_weight": 0.012029,
+          "rank": 3
+        }
+      }
+    },
+    "network": {
+      "label": "Network",
+      "weight": 0.113319,
+      "lambda_max": 4.118466,
+      "ci": 0.039489,
+      "cr": 0.043876,
+      "consistent": true,
+      "fields": {
+        "destinationIp": {
+          "label": "Destination IP",
+          "path": "data.win.eventdata.destinationIp",
+          "ossem": "dst_ip_addr",
+          "mitre_component": "Network Traffic: Network Connection Creation (DS0029)",
+          "mitre_relationship": "direct \u2014 C2 detection and containment",
+          "local_weight": 0.557892,
+          "global_weight": 0.06322,
+          "rank": 1
+        },
+        "destinationPort": {
+          "label": "Destination Port",
+          "path": "data.win.eventdata.destinationPort",
+          "ossem": "dst_port_number",
+          "mitre_component": "Network Traffic: Network Connection Creation (DS0029)",
+          "mitre_relationship": "direct \u2014 service/backdoor identification",
+          "local_weight": 0.263345,
+          "global_weight": 0.029842,
+          "rank": 2
+        },
+        "sourceIp": {
+          "label": "Source IP",
+          "path": "data.win.eventdata.sourceIp",
+          "ossem": "src_ip_addr",
+          "mitre_component": "Network Traffic: Network Connection Creation (DS0029)",
+          "mitre_relationship": "indirect \u2014 traffic direction analysis",
+          "local_weight": 0.121873,
+          "global_weight": 0.01381,
+          "rank": 3
+        },
+        "protocol": {
+          "label": "Protocol",
+          "path": "data.win.eventdata.protocol",
+          "ossem": "network_protocol",
+          "mitre_component": "Network Traffic: Network Connection Creation (DS0029)",
+          "mitre_relationship": "tangential \u2014 traffic classification",
+          "local_weight": 0.05689,
+          "global_weight": 0.006447,
+          "rank": 4
+        }
+      }
+    },
+    "timeline": {
+      "label": "Timeline / Event Context",
+      "weight": 0.043148,
+      "lambda_max": 3.0,
+      "ci": 0.0,
+      "cr": 0.0,
+      "consistent": true,
+      "fields": {
+        "eventID": {
+          "label": "Event ID",
+          "path": "data.win.system.eventID",
+          "ossem": null,
+          "mitre_component": "log source metadata (no ATT&CK component)",
+          "mitre_relationship": "indirect \u2014 activity type identification",
+          "local_weight": 0.428571,
+          "global_weight": 0.018492,
+          "rank": 1
+        },
+        "ruleLevel": {
+          "label": "Rule Level",
+          "path": "rule.level",
+          "ossem": null,
+          "mitre_component": "log source metadata (no ATT&CK component)",
+          "mitre_relationship": "indirect \u2014 static SIEM severity",
+          "local_weight": 0.428571,
+          "global_weight": 0.018492,
+          "rank": 2
+        },
+        "timestamp": {
+          "label": "Timestamp",
+          "path": "@timestamp",
+          "ossem": "event_date",
+          "mitre_component": "always available (no ATT&CK component)",
+          "mitre_relationship": "tangential \u2014 always present",
+          "local_weight": 0.142857,
+          "global_weight": 0.006164,
+          "rank": 3
+        }
+      }
+    }
+  }
+}
