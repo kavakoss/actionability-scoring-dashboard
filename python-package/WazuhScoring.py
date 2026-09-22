@@ -3,7 +3,7 @@ import math
 
 class WazuhScoring:
     def __init__(self, hosts:dict[str, str], auth: tuple[str, str]) -> None:
-        self.client = OpenSearch(hosts=hosts, http_auth=auth)
+        self.client = OpenSearch(hosts=hosts, http_auth=auth, use_ssl=True, verify_certs=False, ssl_show_warn=False)
 
     def search(self, index: str, query: dict) -> dict:
         response = self.client.search(index=index, body=query)
