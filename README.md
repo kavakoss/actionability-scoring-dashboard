@@ -1,6 +1,113 @@
-# Actionability Scoring Dashboard — Setup Guide
+# Actionability Scoring Dashboard — Wazuh / Sysmon Telemetry Quality
 
-## Quick Start (Docker) 🐳
+Prototype sistem untuk skripsi **"Context-Aware Telemetry Observability Evaluation Agent for MITRE ATT&CK-Aligned Wazuh Events"**.
+
+Sistem ini **bukan alat deteksi**. Dia menjawab pertanyaan yang berbeda: *"alert atau case yang sudah terbentuk ini sudah cukup lengkap untuk diinvestigasi, atau masih perlu hunting manual?"* — diukur sebagai **actionability score** 0–100, per alert dan per correlated case.
+
+---
+
+## 1. Latar belakang singkat
+
+- Wazuh + Sysmon menghasilkan alert yang sering **minim konteks**: ada indikasi eksekusi, tapi command line, parent process, user, atau network destination tidak ada di alert tersebut.
+- MITRE ATT&CK mapping tidak sama dengan kualitas deteksi (Shen et al., 2024); SOC analyst juga sudah kelebihan alert (Alahmadi et al., 2022).
+- Karena itu, kualitas telemetri perlu **diukur terpisah** dari pembuatan alert. Di sinilah kontribusi sistem ini.
+
+### Kontribusi
+
+1. **Alert-level actionability score** — bobot field dihitung dengan **AHP (Saaty)** dan divalidasi lewat Consistency Ratio (semua CR < 0.10), lalu disesuaikan per teknik (technique-aware expected fields dari MITRE ATT&CK Data Sources).
+2. **Typed-edge correlation** — event dihubungkan dengan relationship yang punya tipe dan confidence (`SAME_PROCESS`, `PARENT_CHILD`, `SAME_BINARY`, `PROCESS_CONNECTED_TO`, ...), bukan sekadar "ada field yang sama".
+3. **Case-level actionability score** — bukti dari event-event yang terkorrelasi diagregasi dan dideduplikasi, lalu dinilai dengan `Q` (completeness, validity, consistency, provenance) dikali confidence relasi.
+4. **Reproducible artifacts untuk paper** — matriks AHP, laporan CR, dan traceability field → OSSEM → MITRE data component.
+
+**Research questions:** (RQ1) bagaimana menyusun skor actionability yang explainable untuk alert Wazuh/Sysmon; (RQ2) apakah case-level scoring berbasis korelasi meningkatkan penilaian dibanding skor per-alert; (RQ3) seberapa sensitif skor terhadap degradasi telemetri (mis. Sysmon EID 3 dimatikan).
+
+---
+
+## 2. Cara kerja
+
+```text
+Wazuh alert / archive event
+        │
+        ▼
+normalizer.py         canonical schema (OSSEM-referenced):
+                      process.guid, file.hash.sha256, destination.ip, ...
+        │
+        ├──────────────► scoring.py        alert-level score (AHP, technique-aware)
+        │
+        ▼
+correlation.py        typed edges + confidence + bounded expansion
+        │             (pivots: process guid, parent-child, sha256, ...)
+        ▼
+case_scoring.py       aggregate + deduplicate evidence, case-level score
+        │
+        ▼
+FastAPI (main.py) → React dashboard (Cases / Alerts)
+```
+
+Data source bisa **mock** (fixture deterministik) atau **live** (Wazuh Indexer), dan bisa diganti saat runtime dari UI.
+
+---
+
+## 3. Model scoring
+
+**Bobot AHP.** Matriks pairwise ada di `backend/ahp/matrices.py`; hasilnya disimpan di `backend/weights.json` (single source of truth):
+
+```
+w_f = category_weight × local_field_weight        (global weight per field)
+```
+
+**Alert score** — dihitung hanya atas field yang diharapkan untuk teknik tersebut:
+
+```
+S_alert = 100 × Σ (w_f × A_f) / Σ w_f
+A_f = 1 jika field ada dan non-empty, else 0
+```
+
+**Relationship confidence** (typed edge):
+
+```
+C_r = 0.45·P + 0.20·T + 0.15·H + 0.10·S + 0.10·X
+P = pivot strength, T = temporal decay e^(−Δt/τ), H = host consistency,
+S = session/user consistency, X = corroborating evidence
+```
+
+**Case score** — bukti lintas event, dideduplikasi, dibobot kualitas dan confidence:
+
+```
+Q_f = 0.30·C + 0.30·V + 0.25·K + 0.15·R
+      C = completeness, V = validity, K = confidence-weighted corroboration,
+      R = provenance
+S_case = 100 × Σ (w_f × Q_f × E_f) / Σ w_f
+E_f = confidence relasi yang membawa fakta (1.0 untuk fakta dari seed alert)
+```
+
+Level: **Low < 25**, **Medium 25–50**, **High > 50** (provisional; dikalibrasi pada fase evaluasi).
+
+**Kenapa case score bisa 100 sedangkan alert score tidak?** Alert EID 1 tidak punya destination IP dan alert EID 3 tidak punya command line — jadi skor alert memang dibatasi tipe event. Case score menggabungkan EID 1 + EID 3 dari proses yang sama, sehingga seluruh evidence yang diharapkan bisa terpenuhi.
+
+Regenerate bobot + artefak paper:
+
+```bash
+cd backend
+python -m ahp.run_ahp
+# → weights.json, AHP_RESULTS.md, data/mitre_traceability.csv
+```
+
+---
+
+## 4. Correlation model
+
+- **Pivot tiers**: identity (`process.guid`, `parentProcessGuid`, SHA-256) → behavioral (destination tuple, DNS, registry, file) → scope (user, host, time).
+- **Typed relationships**: `SAME_PROCESS`, `PARENT_CHILD`, `SAME_BINARY`, `PROCESS_CONNECTED_TO`, `PROCESS_QUERIED_DNS`, `PROCESS_CREATED_FILE`, `PROCESS_MODIFIED_REGISTRY`, `PROCESS_TERMINATED`, `DESTINATION_SHARED`, `SUPPORTING_CONTEXT`.
+- **Bounded expansion**: depth ≤ 3, hanya identity-backed edge yang boleh rekursi; scope/context edge tidak pernah jadi titik ekspansi.
+- **Deduplication**: fakta yang sama dikumpulkan sebagai satu evidence dengan daftar carrier + occurrence count, supaya 200 event network identik tidak menggelembungkan skor.
+- **Caps**: maksimal 5 context leaf per node, konsistensi dihitung dari maksimal 3 carrier terkuat (identity dihitung penuh, context setengah).
+
+---
+
+## 5. Quick Start
+
+### Docker (nginx, port 8080)
 
 ```bash
 git clone https://github.com/kavakoss/actionability-scoring-dashboard.git
@@ -8,304 +115,204 @@ cd actionability-scoring-dashboard
 docker-compose up --build
 ```
 
-Buka **http://localhost** (atau **http://localhost:8080** kalau port 80 bentrok).
-
-| URL | Description |
-|-----|-------------|
-| `http://localhost` | Dashboard React |
-| `http://localhost/api/docs` | Swagger API docs |
-| `http://localhost/api/health` | Health check |
-
-### Stop
+| URL | Keterangan |
+|---|---|
+| `http://localhost:8080` | Dashboard React |
+| `http://localhost:8080/docs` | Swagger API |
+| `http://localhost:8080/api/health` | Health check |
 
 ```bash
-docker-compose down
+docker-compose down   # stop
 ```
 
----
+### Manual (development)
 
-## Manual Setup (Development)
-
-### Prerequisites
-
-- **Python 3.10+** (tested on 3.12)
-- **Node.js 18+** (tested on 20)
-- **npm** (comes with Node.js)
-
----
-
-## Project Structure
-
-```
-dashboard/
-├── backend/
-│   ├── main.py           # FastAPI server
-│   ├── scoring.py        # AHP actionability scoring (technique-aware)
-│   ├── correlation.py    # Typed-edge correlation + bounded BFS
-│   ├── normalizer.py     # Canonical Wazuh/Sysmon schema (OSSEM-referenced)
-│   ├── field_metadata.py # Wazuh path -> OSSEM -> MITRE component mapping
-│   ├── technique_profiles.py  # Expected fields per ATT&CK technique
-│   ├── ahp/              # Pairwise matrices + weight generation
-│   ├── data/             # Generated artifacts (traceability CSV)
-│   ├── weights.json      # Generated AHP weights (single source of truth)
-│   ├── AHP_RESULTS.md    # Full matrix/CR report for the thesis appendix
-│   ├── live_demo.py      # Bounded live case expansion demo
-│   ├── tests/            # pytest suite (AHP, normalization, correlation, scoring)
-│   ├── wazuh_client.py   # OpenSearch client (live mode)
-│   ├── mock_data.py      # Mock Wazuh alerts (3 MITRE techniques)
-│   ├── .env.example      # Environment template
-│   ├── Dockerfile
-│   └── requirements.txt
-├── frontend/
-│   ├── package.json
-│   ├── vite.config.js
-│   ├── Dockerfile
-│   ├── index.html
-│   └── src/
-│       ├── main.jsx
-│       ├── App.jsx
-│       ├── api.js
-│       └── components/
-│           ├── StatsOverview.jsx
-│           ├── ScoringDashboard.jsx
-│           ├── AlertDetail.jsx
-│           └── TimelineView.jsx
-└── README.md
-```
-
----
-
-## Step 1: Backend Setup
-
-```powershell
-# Navigate to backend
-cd dashboard/backend
-
-# (Optional) Create virtual environment
-python -m venv venv
-venv\Scripts\activate      # Windows
-# source venv/bin/activate  # Linux/Mac
-
-# Install dependencies
+```bash
+# terminal 1 — backend
+cd backend
+python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-```
+python main.py                                  # http://localhost:8000
 
-### Required packages:
-```
-fastapi
-uvicorn
-networkx
-pydantic
-opensearch-py   # for real Wazuh Indexer later, not needed for mock
-```
-
----
-
-## Step 2: Start Backend
-
-```powershell
-cd dashboard/backend
-python main.py
-```
-
-Backend runs at: **http://localhost:8000**
-
-### Verify:
-- http://localhost:8000/api/health
-- http://localhost:8000/api/alerts
-- http://localhost:8000/api/stats
-- http://localhost:8000/docs (auto-generated Swagger UI)
-
----
-
-## Step 3: Frontend Setup
-
-```powershell
-# Open a NEW terminal
-cd dashboard/frontend
-
-# Install dependencies
+# terminal 2 — frontend
+cd frontend
 npm install
+npm run dev                                     # http://localhost:3000
 ```
 
----
+Vite dev server mem-proxy `/api` ke `http://localhost:8000` (override dengan `VITE_API_TARGET`).
 
-## Step 4: Start Frontend
-
-```powershell
-cd dashboard/frontend
-npm run dev
-```
-
-Frontend runs at: **http://localhost:3000**
-
-The Vite dev server proxies `/api` requests to `http://localhost:8000` automatically.
-
----
-
-## Usage Walkthrough
-
-### Cases View (default)
-- Correlated cases ranked by case-level actionability score
-- Filter by technique and level; each row shows required-evidence coverage and graph size
-- Click a case row → case detail
-
-### Case Detail
-- Case score, required-evidence coverage and relation count
-- Evidence facts table: field, role, AHP weight, quality Q, evidence confidence E, contribution
-- "Hide missing" toggle reduces the table to present evidence
-- "Export report" downloads a Markdown case report (usable as a thesis appendix)
-- Score composition (top contributions) and typed relations (relation, confidence, decision)
-- Chronological case timeline with inline relation chips between related events
-- Deep links: `?view=cases&case=alert-009`, `?view=alerts&alert=alert-009`
-
-### Alerts View
-- Per-alert AHP score for every alert, filterable by technique and level
-- Click an alert → field-level breakdown per category with expected/required roles
-
-### Manual development run
-
-```bash
-# terminal 1 — backend (mock data unless USE_LIVE_WAZUH=true)
-cd backend && python main.py                 # http://localhost:8000
-
-# terminal 2 — frontend dev server
-cd frontend && npm install && npm run dev    # http://localhost:3000, proxies /api to :8000
-```
-
-Set `VITE_API_TARGET` if the backend runs elsewhere.
-
----
-
-## Scoring Model (AHP, technique-aware)
-
-Weights are generated from the pairwise matrices in `backend/ahp/matrices.py`
-and stored in `backend/weights.json` (single source of truth):
+### Tests
 
 ```bash
 cd backend
-python -m ahp.run_ahp   # regenerates weights.json, AHP_RESULTS.md, data/mitre_traceability.csv
+pytest -q          # 32 tests: AHP, normalizer, correlation, scoring, case scoring
 ```
-
-- `w_f = category_weight x local_field_weight` (global weight of a field)
-- `S_alert = 100 x SUM(w_f * A_f) / SUM(w_f)` over the technique's expected
-  fields (`technique_profiles.py`), where `A_f = 1` if the field is present.
-- Levels: Low < 25, Medium 25-50, High > 50 (provisional; calibrated during
-  the sensitivity evaluation).
-- All matrices must satisfy CR < 0.10; this is enforced by `tests/test_ahp.py`.
-
-Correlation (typed edges + confidence) runs on the normalized schema produced
-by `normalizer.py`; the case-level score aggregates deduplicated evidence and
-weights each fact by the confidence of the relationship that delivered it.
 
 ---
 
-## API Endpoints
+## 6. Mock vs Live data
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/health` | Health check + current source (mock/live) |
-| GET | `/api/source` | Current source, availability and config (same as health) |
-| POST | `/api/source` | Switch source at runtime: `{"source": "mock" \| "live"}` |
-| GET | `/api/alerts` | List alerts (filterable: `?technique=&level=&agent=`) |
-| GET | `/api/alerts/{id}` | Single alert detail + full scoring breakdown |
-| GET | `/api/cases` | List correlated cases with case-level actionability score |
-| GET | `/api/cases/{case_id}` | Case detail: per-fact evidence (Q, E, carriers) + required coverage |
-| GET | `/api/timeline/{id}` | Timeline graph (nodes + edges) from seed alert |
-| POST | `/api/webhook` | **Wazuh Integration webhook** — alert → bounded expansion → case score |
-| GET | `/api/stats` | Aggregate statistics |
-| GET | `/docs` | Interactive Swagger documentation |
+Data source bisa diganti **saat runtime**:
 
----
+- **UI** — toggle `MOCK` / `LIVE` di kanan atas header.
+- **API** — `POST /api/source` dengan `{"source": "mock"}` atau `{"source": "live"}`.
+- **Startup default** — `USE_LIVE_WAZUH=true` di `backend/.env` (window: `LIVE_HOURS_BACK`, `LIVE_ALERT_LIMIT`). Kalau Indexer tidak reachable, backend fallback ke mock dan menyimpan pesan di `last_error` — dashboard tidak pernah kosong.
 
-## Mock vs Live Data
+Live mode memuat alert terbaru dari `wazuh-alerts-*`, men-skor, membangun graph + case. Webhook (`POST /api/webhook`) menjalankan bounded expansion ke `wazuh-archives-*` untuk kasus yang masuk real-time.
 
-The data source can be switched **at runtime**:
+### Konfigurasi `.env`
 
-- **UI** — MOCK/LIVE toggle in the top-right header.
-- **API** — `POST /api/source` with `{"source": "mock"}` or `{"source": "live"}`.
-- **Startup default** — `USE_LIVE_WAZUH=true` in `.env` (tunable window:
-  `LIVE_HOURS_BACK`, `LIVE_ALERT_LIMIT`). If the Wazuh Indexer is unreachable
-  the backend logs the error, reports it as `last_error` and keeps serving the
-  mock source instead of starting empty.
-
-Switching to live loads the most recent alerts from the Wazuh Indexer
-(`wazuh-alerts-*`), scores them, builds the correlation graph and computes the
-case scores. The Wazuh Manager webhook (`POST /api/webhook`) additionally runs
-a bounded expansion over `wazuh-archives-*` and stores the resulting case.
-
-### Step 1: Copy & configure .env
-
-```powershell
-cd dashboard/backend
-copy .env.example .env
-# Edit .env — isi WAZUH_INDEXER_PASS dengan password sebenarnya
+```bash
+cd backend
+cp .env.example .env
 ```
 
-### Step 2: Set USE_LIVE_WAZUH=true (optional startup default)
-
-Di `.env`:
-```
+```ini
+WAZUH_INDEXER_HOST=...
+WAZUH_INDEXER_PORT=9200
+WAZUH_INDEXER_USER=admin
+WAZUH_INDEXER_PASS=...
+WAZUH_INDEXER_SSL=true
+WAZUH_INDEXER_VERIFY_CERTS=false
 USE_LIVE_WAZUH=true
 LIVE_HOURS_BACK=48
 LIVE_ALERT_LIMIT=100
 ```
 
-### Step 3: Restart backend
+`.env` sudah di-gitignore — **jangan pernah commit credentials**.
 
-```powershell
-python main.py
-# → Health check akan tampil "mode": "live"
-```
+### Wazuh Manager integration (webhook)
 
-### How it works (live mode)
-
-```text
-Wazuh Integration            Backend (FastAPI)           Wazuh Indexer
-───────────────              ─────────────────           ──────────────
-Alert fired (level>=7)
-    │
-    └──POST /api/webhook────► 1. Score the alert
-                              2. Extract entities
-                                 (processGuid, user,
-                                  host, dstIp...)
-                              3. query_related_events()
-                                 ──────────────────────► OpenSearch:
-                                                         "Cari semua event
-                                                          dgn processGuid /
-                                                          user / IP yg sama"
-                                 ◄────────────────────── Return related events
-                              4. Score semua related events
-                              5. Build correlation graph
-                              6. Return scoring + timeline
-```
-
-### Wazuh Manager Integration Config
-
-Tambahkan di `/var/ossec/etc/ossec.conf` pada Wazuh Manager:
+Tambahkan di `/var/ossec/etc/ossec.conf`, lalu restart Wazuh Manager:
 
 ```xml
 <integration>
     <name>actionability-scoring</name>
-    <hook_url>http://172.16.11.1:8000/api/webhook</hook_url>
+    <hook_url>http://<backend-host>:8000/api/webhook</hook_url>
     <level>7</level>
     <group>sysmon</group>
     <alert_format>json</alert_format>
 </integration>
 ```
 
-Setelah edit, restart Wazuh Manager:
-```bash
-sudo systemctl restart wazuh-manager
+---
+
+## 7. UI walkthrough
+
+### Cases (default)
+- Daftar **correlated case** diurutkan berdasarkan case score, beserta required-evidence coverage dan ukuran graph.
+- Filter by technique / level.
+
+### Case detail
+- Case score, required coverage, jumlah node/edge.
+- **Evidence facts**: field, role (`required`/`supporting`/`context`), AHP weight, `Q`, `E`, contribution, dan carrier (value + event asal).
+- Toggle **Hide missing** dan tombol **Export report** (Markdown, siap jadi lampiran skripsi).
+- **Score composition** dan daftar **typed relations** (`relation`, confidence, decision).
+- **Case timeline** kronologis dengan chip relasi inline antar event.
+- Deep link: `?view=cases&case=<id>`, `?view=alerts&alert=<id>`.
+
+### Alerts
+- Skor per-alert (AHP, technique-aware), filter by technique / level.
+- Klik alert → breakdown per kategori (identity, behavioral, relationship, IOC, network, timeline) dengan MITRE data component tiap field.
+
+---
+
+## 8. API endpoints
+
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | `/api/health` | Health check + current source |
+| GET | `/api/source` | Current source, availability, config |
+| POST | `/api/source` | Switch source: `{"source": "mock" \| "live"}` |
+| GET | `/api/alerts` | List alerts (`?technique=&level=&agent=&sort_by=score`) |
+| GET | `/api/alerts/{id}` | Alert detail + full scoring breakdown |
+| GET | `/api/cases` | List cases + case-level score (`?technique=&level=`) |
+| GET | `/api/cases/{case_id}` | Case detail: per-fact evidence (Q, E, carriers) + required coverage |
+| GET | `/api/timeline/{id}` | Timeline graph (nodes + typed edges) from a seed |
+| POST | `/api/webhook` | Wazuh integration: alert → bounded expansion → case score |
+| GET | `/api/stats` | Aggregate statistics |
+| GET | `/docs` | Swagger UI |
+
+---
+
+## 9. Artifacts untuk paper
+
+| File | Isi | Dipakai untuk |
+|---|---|---|
+| `backend/weights.json` | Bobot AHP final (per kategori & field) | single source of truth |
+| `backend/AHP_RESULTS.md` | Semua matriks pairwise, λmax, CI, CR, global weights | lampiran + methodology |
+| `backend/data/mitre_traceability.csv` | `technique → field → role → weight → Wazuh path → OSSEM → MITRE component` | content validity / lampiran |
+| `backend/field_metadata.py` | sumber mapping field | reproducibility |
+| `backend/technique_profiles.py` | expected fields per teknik + kutipan data source | methodology |
+| `evaluation/` | runbook ART, template run log, script evaluasi | bab evaluasi (fase 4) |
+
+---
+
+## 10. Struktur project
+
+```
+actionability-scoring-dashboard/
+├── backend/
+│   ├── main.py                # FastAPI server + source switching
+│   ├── normalizer.py          # canonical schema (OSSEM-referenced)
+│   ├── correlation.py         # typed edges, confidence, bounded expansion
+│   ├── case_scoring.py        # case-level Q/E scoring + caps
+│   ├── scoring.py             # alert-level AHP scoring (technique-aware)
+│   ├── field_metadata.py      # Wazuh path → OSSEM → MITRE component
+│   ├── technique_profiles.py  # expected fields per ATT&CK technique
+│   ├── wazuh_client.py        # OpenSearch client, pivot queries
+│   ├── mock_data.py           # mock alerts (deterministic demo/tests)
+│   ├── ahp/                   # AHP core, pairwise matrices, generator
+│   ├── data/                  # generated: traceability CSV
+│   ├── weights.json           # generated: AHP weights
+│   ├── AHP_RESULTS.md         # generated: full AHP report
+│   ├── live_demo.py           # CLI: bounded live case expansion
+│   ├── tests/                 # pytest suite
+│   └── requirements.txt
+├── frontend/
+│   └── src/
+│       ├── App.jsx            # shell, tabs, source toggle, deep links
+│       ├── api.js
+│       └── components/
+│           ├── CasesView.jsx      # case list
+│           ├── CaseDetail.jsx     # case score + evidence + export
+│           ├── TimelineView.jsx   # timeline with inline relation chips
+│           ├── ScoringDashboard.jsx / AlertDetail.jsx / StatsOverview.jsx
+│           └── ui.jsx             # design primitives
+├── evaluation/                # ART runbook, run log, evaluation scripts
+├── nginx/                     # reverse proxy for docker-compose
+└── docker-compose.yml
 ```
 
 ---
 
-## Troubleshooting
+## 11. Limitations (jujur, untuk bab pembahasan)
 
-| Problem | Fix |
-|---------|-----|
-| Backend won't start (port 8000 in use) | Change port in `main.py` line: `uvicorn.run(app, port=8001)` |
-| Frontend can't reach API | Check backend is running. Verify proxy in `vite.config.js` |
-| `npm install` fails | Try `npm install --legacy-peer-deps` |
-| Blank page in browser | Check browser console for errors (F12) |
+- Lab terbatas: 1 Windows endpoint, 3 teknik (T1059.001, T1059.003, T1105), Sysmon EID 1/3/5.
+- Sysmon EID 22 (DNS) praktis tidak aktif → pivot DNS tidak dipakai; registry/file/pipe pivot belum tersedia.
+- EID 5 (Process Termination) **tidak** dipakai untuk scoring (bukan data component ATT&CK untuk 3 teknik ini) — hanya untuk correlation/lifetime.
+- Archives retention terbatas; Process Create milik proses yang sudah berjalan sebelum archive window hilang → lineage bisa terputus.
+- `originalFileName` dan `signatureStatus` tidak punya atribut OSSEM CDM (tercatat di traceability CSV).
+- Threshold Low/Medium/High masih provisional sampai kalibrasi di fase evaluasi.
+- Skor mengukur **kelengkapan bukti**, bukan tingkat kebahayaan; adversary yang mengisi field bisa menaikkan skor (dibahas sebagai limitation).
+
+---
+
+## 12. Troubleshooting
+
+| Masalah | Solusi |
+|---|---|
+| Backend tidak start (port 8000 terpakai) | Ubah port di `main.py` (`uvicorn.run(app, port=8001)`) |
+| Frontend tidak bisa akses API | Pastikan backend jalan; cek `VITE_API_TARGET` / `vite.config.js` |
+| `npm install` gagal | Coba `npm install --legacy-peer-deps` |
+| Live mode kosong / error | Cek `last_error` di `/api/health`; pastikan `.env` benar dan Indexer reachable |
+| Halaman blank | Cek console browser (F12) |
+
+---
+
+## 13. Authors
+
+Jason Tanuwidjaja · Johan Davin Hermawan · Kevin Diaz Pramono — Computer Science, Bina Nusantara University.
+
+Skripsi: *Context-Aware Telemetry Observability Evaluation Agent for MITRE ATT&CK-Aligned Wazuh Events*.

@@ -1,0 +1,2 @@
+run_id,technique,condition,atomic_test,host,start_utc,end_utc,notes
+run-000,T1059.001,baseline,,WIN-THESIS-01,2026-09-23T01:00:00Z,2026-09-23T01:45:00Z,benign window (contoh baris - hapus)
