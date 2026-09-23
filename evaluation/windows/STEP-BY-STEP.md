@@ -100,5 +100,7 @@ Script menampilkan lokasi:
 | ART error saat run | Script tetap mencatat baris dengan catatan `ERROR: ...` — laporkan ke Jason |
 | Laptop restart di tengah jalan | Jalankan ulang dengan `-SkipBaseline`; run yang sudah tercatat tetap valid |
 | NetworkConnect tidak terdeteksi | Kabari Jason — Condition A tidak bisa dijalankan sebelum ini beres |
-| `NativeCommandError` saat "Backup config Sysmon" | Sudah diperbaiki di script terbaru — `cd C:\ART\repo && git pull` lalu copy ulang `Invoke-ArtPlan.ps1` ke `C:\ART\` |
+| `NativeCommandError` / `Tidak bisa membaca config Sysmon` | Script terbaru otomatis mencari file config Sysmon di disk (`C:\Windows`, `C:\Tools`, Downloads, Documents, Desktop) dan meminta Anda memilih. Kalau sudah tahu file-nya, langsung jalankan: `powershell -ExecutionPolicy Bypass -File .\Invoke-ArtPlan.ps1 -SysmonConfigPath "C:\path\sysmonconfig.xml"` |
+| Tidak tahu file config Sysmon yang mana | Jalankan di PowerShell admin: `Get-ChildItem C:\ -Filter *.xml -Recurse -Depth 3 -ErrorAction SilentlyContinue \| Select-String -Pattern '<Sysmon' -List \| Select-Object Path` — pilih yang namanya seperti `sysmonconfig.xml` / `sysmon-modular.xml` |
+| Ingin tahu kenapa `sysmon -c` gagal | Jalankan: `cd C:\Windows; .\Sysmon64.exe -c; "exit=$LASTEXITCODE"` dan kirim outputnya ke Jason |
 | Peringatan `Windows Time service tidak Running` | Bukan error; pastikan jam Windows benar (Settings → Time & language → Sync now) atau jalankan `w32tm /resync` di PowerShell admin |

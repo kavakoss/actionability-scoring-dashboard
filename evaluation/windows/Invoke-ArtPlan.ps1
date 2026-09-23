@@ -40,6 +40,10 @@ param(
     [switch]$SkipConditionB,
     [switch]$DryRun,
 
+    # Opsional: path file config Sysmon yang dipakai saat install.
+    # Dipakai kalau 'sysmon64 -c' tidak bisa membaca config.
+    [string]$SysmonConfigPath = "",
+
     [string]$WorkDir = "C:\ART",
     [string]$OutCsv = "C:\ART\runs.csv"
 )
@@ -79,6 +83,7 @@ function Invoke-NativeCapture {
     $ErrorActionPreference = "Continue"
     try {
         $output = & $Executable @Arguments 2>&1
+        $script:LastNativeExitCode = $LASTEXITCODE
     } finally {
         $ErrorActionPreference = $previousPreference
     }
@@ -174,9 +179,80 @@ function Get-SysmonConfigXml([string]$SysmonExe) {
     if ($start -lt 0 -or $end -lt 0) {
         $preview = $text.Trim()
         if ($preview.Length -gt 300) { $preview = $preview.Substring(0, 300) + "..." }
-        throw "Tidak bisa membaca config Sysmon (sysmon -c). Output: $preview"
+        throw ("Tidak bisa membaca config Sysmon via 'sysmon -c' (exit code {0}). Output: {1}" -f $script:LastNativeExitCode, $preview)
     }
     return $text.Substring($start, ($end - $start) + "</Sysmon>".Length)
+}
+
+function Find-SysmonConfigFile {
+    $roots = @(
+        "C:\Windows",
+        "C:\Windows\Sysmon",
+        "C:\Tools",
+        $WorkDir,
+        (Join-Path $env:USERPROFILE "Downloads"),
+        (Join-Path $env:USERPROFILE "Documents"),
+        (Join-Path $env:USERPROFILE "Desktop")
+    )
+    $candidates = @()
+    foreach ($root in $roots) {
+        if (-not (Test-Path $root)) { continue }
+        $files = Get-ChildItem -Path $root -Filter *.xml -File -Recurse -Depth 3 -ErrorAction SilentlyContinue
+        foreach ($file in $files) {
+            try {
+                $content = Get-Content -Path $file.FullName -Raw -ErrorAction Stop
+            } catch { continue }
+            if ($content -match "<Sysmon") {
+                $candidates += [pscustomobject]@{
+                    Path          = $file.FullName
+                    LastWriteTime = $file.LastWriteTime
+                    Content       = $content
+                }
+            }
+        }
+    }
+    return ($candidates | Sort-Object LastWriteTime -Descending | Select-Object -First 5)
+}
+
+function Resolve-SysmonConfig {
+    param([string]$SysmonExe)
+
+    if ($SysmonConfigPath) {
+        if (-not (Test-Path $SysmonConfigPath)) {
+            throw "File config Sysmon tidak ditemukan: $SysmonConfigPath"
+        }
+        $content = Get-Content -Path $SysmonConfigPath -Raw
+        if ($content -notmatch "<Sysmon") {
+            throw "File $SysmonConfigPath tidak berisi config Sysmon (<Sysmon ...>)."
+        }
+        Write-Ok ("config dibaca dari file: {0}" -f $SysmonConfigPath)
+        return @{ Xml = $content; Source = $SysmonConfigPath }
+    }
+
+    try {
+        $xml = Get-SysmonConfigXml -SysmonExe $SysmonExe
+        Write-Ok "config dibaca dari live dump (sysmon -c)."
+        return @{ Xml = $xml; Source = "sysmon -c (live dump)" }
+    } catch {
+        Write-Warn2 $_.Exception.Message
+    }
+
+    Write-Info "Mencari file config Sysmon di disk (C:\Windows, C:\Tools, Downloads, Documents, Desktop) ..."
+    $candidates = @(Find-SysmonConfigFile)
+    if ($candidates.Count -eq 0) {
+        throw ("Config Sysmon tidak bisa dibaca dan tidak ada file *.xml berisi '<Sysmon' ditemukan. " +
+               "Jalankan ulang dengan: -SysmonConfigPath <path file config Sysmon yang dipakai saat install>.")
+    }
+    Write-Host ""
+    Write-Host "Kandidat file config Sysmon (terbaru dulu):" -ForegroundColor White
+    for ($i = 0; $i -lt $candidates.Count; $i++) {
+        Write-Host ("  [{0}] {1}  ({2})" -f ($i + 1), $candidates[$i].Path, $candidates[$i].LastWriteTime)
+    }
+    $answer = Read-Host "Pilih nomor file config yang dipakai Sysmon saat ini [1]"
+    if ([string]::IsNullOrWhiteSpace($answer)) { $answer = "1" }
+    $picked = $candidates[[int]$answer - 1]
+    Write-Ok ("config dipakai: {0}" -f $picked.Path)
+    return @{ Xml = $picked.Content; Source = $picked.Path }
 }
 
 function Ensure-AtomicRedTeam {
@@ -306,12 +382,13 @@ $sysmon = Get-SysmonExecutable
 Write-Ok ("sysmon   : {0}" -f $sysmon)
 Assert-Services
 
-Write-Step "Backup config Sysmon"
+Write-Step "Ambil + backup config Sysmon"
 $fullConfigPath = Join-Path $WorkDir "sysmon-config-full.xml"
 $noEid3ConfigPath = Join-Path $WorkDir "sysmon-config-no-eid3.xml"
-$fullXml = Get-SysmonConfigXml -SysmonExe $sysmon
+$resolved = Resolve-SysmonConfig -SysmonExe $sysmon
+$fullXml = $resolved.Xml
 $fullXml | Out-File -FilePath $fullConfigPath -Encoding utf8
-Write-Ok ("config tersimpan: {0}" -f $fullConfigPath)
+Write-Ok ("config tersimpan: {0} (sumber: {1})" -f $fullConfigPath, $resolved.Source)
 $hasNetworkConnect = $fullXml -match "<NetworkConnect"
 if (-not $hasNetworkConnect) {
     Write-Warn2 "Config Sysmon saat ini TIDAK punya NetworkConnect (EID 3) - Condition A tidak valid. Beri tahu Jason."
