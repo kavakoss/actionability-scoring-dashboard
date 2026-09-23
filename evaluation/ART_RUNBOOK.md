@@ -1,5 +1,12 @@
 # ART Runbook — Controlled Atomic Red Team Runs
 
+> **Cara termudah:** gunakan script otomatis
+> [`windows/Invoke-ArtPlan.ps1`](windows/Invoke-ArtPlan.ps1) dengan panduan
+> [`windows/STEP-BY-STEP.md`](windows/STEP-BY-STEP.md). Script itu sudah melakukan
+> semua langkah manual di bawah (backup config, install ART, baseline, Condition A/B,
+> restore, dan menulis `runs.csv`). Dokumen ini tetap disimpan sebagai referensi
+> prosedur dan penjelasan tiap langkah.
+
 Tujuan: menghasilkan **run berlabel** untuk fase evaluasi (sensitivity, ablation korelasi,
 discrimination) pada endpoint Windows yang dimonitor Wazuh + Sysmon.
 
