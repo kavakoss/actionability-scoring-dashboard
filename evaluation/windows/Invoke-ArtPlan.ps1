@@ -67,6 +67,24 @@ function New-RunId {
     return ("run-{0}-{1:D2}" -f (Get-Date).ToUniversalTime().ToString("yyyyMMdd-HHmmss"), $script:RunCounter)
 }
 
+# Native commands (sysmon64) write to stderr; with ErrorActionPreference=Stop
+# PowerShell 5.1 turns that into a terminating NativeCommandError. Capturing
+# with a temporarily relaxed preference avoids the false error.
+function Invoke-NativeCapture {
+    param(
+        [string]$Executable,
+        [string[]]$Arguments
+    )
+    $previousPreference = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        $output = & $Executable @Arguments 2>&1
+    } finally {
+        $ErrorActionPreference = $previousPreference
+    }
+    return ($output | Out-String)
+}
+
 function Add-RunRow {
     param(
         [string]$RunId,
@@ -150,12 +168,13 @@ function Assert-Services {
 }
 
 function Get-SysmonConfigXml([string]$SysmonExe) {
-    $output = & $SysmonExe -c 2>$null
-    $text = ($output | Out-String)
+    $text = Invoke-NativeCapture -Executable $SysmonExe -Arguments @("-c")
     $start = $text.IndexOf("<Sysmon")
     $end = $text.LastIndexOf("</Sysmon>")
     if ($start -lt 0 -or $end -lt 0) {
-        throw "Tidak bisa membaca config Sysmon (sysmon -c)."
+        $preview = $text.Trim()
+        if ($preview.Length -gt 300) { $preview = $preview.Substring(0, 300) + "..." }
+        throw "Tidak bisa membaca config Sysmon (sysmon -c). Output: $preview"
     }
     return $text.Substring($start, ($end - $start) + "</Sysmon>".Length)
 }
@@ -268,7 +287,7 @@ function Invoke-RepetitionSet {
 }
 
 function Set-SysmonConfig([string]$SysmonExe, [string]$Path) {
-    & $SysmonExe -c $Path | Out-Null
+    Invoke-NativeCapture -Executable $SysmonExe -Arguments @("-c", $Path) | Out-Null
     Start-Sleep -Seconds 2
 }
 

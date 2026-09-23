@@ -100,3 +100,5 @@ Script menampilkan lokasi:
 | ART error saat run | Script tetap mencatat baris dengan catatan `ERROR: ...` — laporkan ke Jason |
 | Laptop restart di tengah jalan | Jalankan ulang dengan `-SkipBaseline`; run yang sudah tercatat tetap valid |
 | NetworkConnect tidak terdeteksi | Kabari Jason — Condition A tidak bisa dijalankan sebelum ini beres |
+| `NativeCommandError` saat "Backup config Sysmon" | Sudah diperbaiki di script terbaru — `cd C:\ART\repo && git pull` lalu copy ulang `Invoke-ArtPlan.ps1` ke `C:\ART\` |
+| Peringatan `Windows Time service tidak Running` | Bukan error; pastikan jam Windows benar (Settings → Time & language → Sync now) atau jalankan `w32tm /resync` di PowerShell admin |
