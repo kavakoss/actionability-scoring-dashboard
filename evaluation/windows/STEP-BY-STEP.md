@@ -48,7 +48,7 @@ file config yang benar-benar dipakai untuk Sysmon saat ini. Script memakai file
 tersebut untuk restore setelah Condition B. Kalau ragu, batalkan dan konfirmasi
 dengan Jason dulu.
 
-Ketik `YES` saat diminta konfirmasi.
+Ketik `YES` saat diminta konfirmasi (kecuali memakai `-Unattended`, lihat bagian 3).
 
 ---
 
@@ -98,6 +98,27 @@ Default: baseline 3×30 menit, 3 repetisi per teknik, jeda 10 menit. Estimasi 2,
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\Invoke-ArtPlan.ps1 -SkipBaseline -SkipConditionB -Repetitions 1 -SpacingMinutes 1
 ```
+
+### Tanpa interaksi sama sekali — 0 prompt (`-Unattended`)
+
+```powershell
+# pilot tanpa prompt (±1 jam)
+powershell -ExecutionPolicy Bypass -File .\Invoke-ArtPlan.ps1 -Pilot -Unattended
+
+# sesi penuh tanpa prompt (2,5–3,5 jam)
+powershell -ExecutionPolicy Bypass -File .\Invoke-ArtPlan.ps1 -Unattended
+```
+
+Dengan `-Unattended`:
+- konfirmasi `YES` dilewati; script langsung mulai,
+- nomor test dipakai dari **saran otomatis** script (lihat tabel bagian 2),
+- baseline mulai sendiri (ada jeda 10 detik pemberitahuan),
+- kalau config Sysmon tidak terbaca dan ada **lebih dari satu** kandidat file,
+  script berhenti dengan pesan — jalankan ulang dengan `-SysmonConfigPath <file>`
+  (tidak memilih otomatis demi keamanan restore).
+
+Karena tidak ada konfirmasi, pastikan dulu: charger tercolok, Sleep = Never, dan
+tidak ada pekerjaan lain di laptop selama sesi.
 
 ---
 

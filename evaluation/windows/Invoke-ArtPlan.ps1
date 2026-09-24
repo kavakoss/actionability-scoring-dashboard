@@ -16,6 +16,8 @@
 
     Gunakan -Pilot untuk sesi cepat (+-1 jam: 2 repetisi, jeda 5 menit,
     baseline 1x20 menit). Untuk data resmi skripsi jalankan tanpa -Pilot.
+    Tambahkan -Unattended untuk tanpa prompt sama sekali (test dipilih
+    otomatis, baseline mulai otomatis, tanpa konfirmasi YES).
 
     Jalankan di endpoint Windows yang dimonitor Wazuh + Sysmon, sebagai Administrator.
     Lihat STEP-BY-STEP.md untuk instruksi lengkap.
@@ -46,6 +48,11 @@ param(
     # Sesi pilot cepat: 2 repetisi, jeda 5 menit, baseline 1x20 menit.
     # Nilai yang Anda tulis eksplisit (mis. -SpacingMinutes 10) tetap menang.
     [switch]$Pilot,
+
+    # Tanpa prompt: konfirmasi YES dilewati, baseline mulai otomatis, nomor
+    # test memakai saran script. Kalau config Sysmon gagal dibaca dan ada
+    # lebih dari satu kandidat, script berhenti (pakai -SysmonConfigPath).
+    [switch]$Unattended,
 
     # Opsional: path file config Sysmon yang dipakai saat install.
     # Dipakai kalau 'sysmon64 -c' tidak bisa membaca config.
@@ -266,6 +273,16 @@ function Resolve-SysmonConfig {
     for ($i = 0; $i -lt $candidates.Count; $i++) {
         Write-Host ("  [{0}] {1}  ({2})" -f ($i + 1), $candidates[$i].Path, $candidates[$i].LastWriteTime)
     }
+    if ($Unattended) {
+        if ($candidates.Count -gt 1) {
+            throw ("Mode -Unattended: ditemukan {0} kandidat config Sysmon dan pemilihan otomatis " +
+                   "tidak aman karena file itu dipakai untuk restore. Jalankan dengan " +
+                   "-SysmonConfigPath <file config yang benar>." -f $candidates.Count)
+        }
+        $picked = $candidates[0]
+        Write-Ok ("config dipakai (unattended, satu kandidat): {0}" -f $picked.Path)
+        return @{ Xml = $picked.Content; Source = $picked.Path }
+    }
     $answer = Read-Host "Pilih nomor file config yang dipakai Sysmon saat ini [1]"
     if ([string]::IsNullOrWhiteSpace($answer)) { $answer = "1" }
     $picked = $candidates[[int]$answer - 1]
@@ -332,6 +349,10 @@ function Select-AtomicTest {
     }
     if ($bestScore -le 0) { $best = 1 }
 
+    if ($Unattended) {
+        Write-Ok ("unattended: otomatis pakai test {0} untuk {1}" -f $best, $Technique)
+        return $best
+    }
     $answer = Read-Host ("Pilih nomor test {0} [default {1}]" -f $Technique, $best)
     if ([string]::IsNullOrWhiteSpace($answer)) { return $best }
     return [int]$answer
@@ -399,6 +420,9 @@ Write-Info ("Waktu    : {0}" -f (Get-Date).ToUniversalTime().ToString("yyyy-MM-d
 if ($Pilot) {
     Write-Warn2 "MODE PILOT aktif: 2 repetisi, jeda 5 menit, baseline 1x20 menit (bukan untuk data resmi)."
 }
+if ($Unattended) {
+    Write-Warn2 "MODE UNATTENDED aktif: tanpa konfirmasi, test memakai saran script, baseline mulai otomatis."
+}
 
 Assert-Admin
 New-Item -ItemType Directory -Force -Path $WorkDir | Out-Null
@@ -453,8 +477,12 @@ if (-not $SkipConditionB) {
 $plan | ForEach-Object { Write-Info ("- " + $_) }
 if ($DryRun) { Write-Info "[dry-run] selesai tanpa eksekusi."; return }
 
-$confirm = Read-Host "`nKetik YES untuk mulai"
-if ($confirm -ne "YES") { Write-Info "Dibatalkan."; return }
+if ($Unattended) {
+    Write-Info "Mode -Unattended: mulai otomatis tanpa konfirmasi."
+} else {
+    $confirm = Read-Host "`nKetik YES untuk mulai"
+    if ($confirm -ne "YES") { Write-Info "Dibatalkan."; return }
+}
 
 $overallStart = (Get-Date).ToUniversalTime()
 
@@ -463,7 +491,12 @@ if (-not $SkipBaseline) {
     Write-Step "Baseline benign"
     Write-Info "Lakukan aktivitas normal (dokumen/browsing ringan). JANGAN jalankan ART."
     for ($w = 1; $w -le $BaselineWindows; $w++) {
-        Read-Host ("Tekan Enter untuk mulai baseline window {0}/{1}" -f $w, $BaselineWindows)
+        if ($Unattended) {
+            Write-Info ("Baseline window {0}/{1} mulai otomatis dalam 10 detik. Jangan jalankan apa pun." -f $w, $BaselineWindows)
+            Start-Sleep -Seconds 10
+        } else {
+            Read-Host ("Tekan Enter untuk mulai baseline window {0}/{1}" -f $w, $BaselineWindows)
+        }
         $start = (Get-Date).ToUniversalTime()
         Write-Info ("Baseline window {0} berjalan {1} menit ..." -f $w, $BaselineMinutes)
         Start-Sleep -Seconds ($BaselineMinutes * 60)
