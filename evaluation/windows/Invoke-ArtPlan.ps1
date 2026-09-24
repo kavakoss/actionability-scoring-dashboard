@@ -51,6 +51,7 @@ param(
 $ErrorActionPreference = "Stop"
 $script:HostName = $env:COMPUTERNAME
 $script:RunCounter = 0
+$script:LastNativeExitCode = 0
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -147,7 +148,10 @@ function Get-SysmonExecutable {
         $command = Get-Command $name -ErrorAction SilentlyContinue
         if ($command) { return $command.Source }
     }
-    throw "sysmon tidak ditemukan. Pastikan Microsoft Sysmon terinstall."
+    foreach ($path in @("C:\Windows\Sysmon64.exe", "C:\Windows\Sysmon.exe")) {
+        if (Test-Path $path) { return $path }
+    }
+    throw "sysmon tidak ditemukan (PATH maupun C:\Windows). Pastikan Microsoft Sysmon terinstall."
 }
 
 function Assert-Services {
@@ -342,14 +346,14 @@ function Invoke-RepetitionSet {
         $start = (Get-Date).ToUniversalTime()
         $errorNote = ""
         try {
-            Invoke-AtomicTest $Technique -TestNumbers $TestNumber -Confirm:$false -ErrorAction Stop | Out-Null
+            Invoke-AtomicTest $Technique -TestNumbers $TestNumber -ErrorAction Stop | Out-Null
             Write-Ok "atomic selesai dieksekusi."
         } catch {
             $errorNote = "ERROR: " + $_.Exception.Message
             Write-Warn2 $errorNote
         }
         try {
-            Invoke-AtomicTest $Technique -TestNumbers $TestNumber -Cleanup -Confirm:$false -ErrorAction SilentlyContinue | Out-Null
+            Invoke-AtomicTest $Technique -TestNumbers $TestNumber -Cleanup -ErrorAction SilentlyContinue | Out-Null
         } catch { }
         $end = (Get-Date).ToUniversalTime()
 
