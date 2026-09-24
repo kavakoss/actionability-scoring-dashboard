@@ -1,6 +1,6 @@
 # STEP-BY-STEP — Menjalankan Evaluasi ART di Laptop Windows
 
-Panduan untuk operator (teman Jason). Estimasi total: **± 2,5–3,5 jam** (baseline + 9 run Condition A + 3 run Condition B + jeda otomatis).
+Panduan untuk operator (teman Jason). Estimasi total: **± 2,5–3,5 jam** untuk sesi penuh, atau **± 1 jam** dengan mode pilot (`-Pilot`).
 
 Semua dijalankan **di laptop Windows** yang menjalankan Wazuh agent + Sysmon (WIN-THESIS-01), **bukan** di server Wazuh.
 
@@ -66,21 +66,38 @@ Yang penting: **pilih satu test yang sama** untuk semua repetisi (script yang me
 
 ---
 
-## 3. Uji coba dulu (opsional, 5 menit)
+## 3. Mode sesi dan uji coba
 
-Kalau mau memastikan script jalan sebelum sesi panjang:
+### Cek dulu tanpa eksekusi (±1–3 menit)
 
 ```powershell
 # tidak menjalankan atomic / tidak mengubah EID 3; preflight + backup tetap dilakukan
 powershell -ExecutionPolicy Bypass -File .\Invoke-ArtPlan.ps1 -DryRun
-
-# sesi ngebut (BUKAN untuk data resmi, hanya uji mekanisme)
-powershell -ExecutionPolicy Bypass -File .\Invoke-ArtPlan.ps1 -SkipBaseline -SpacingMinutes 1 -Repetitions 1
 ```
 
-`-DryRun` tidak menjalankan atomic dan tidak mengganti config EID 3, tetapi tetap melakukan preflight, bisa memasang ART bila belum ada, dan menyimpan backup config Sysmon ke `C:\ART`.
+### Mode pilot — sesi cepat ±1 jam (untuk uji end-to-end, bukan data final)
 
-Untuk data resmi, jalankan tanpa opsi tambahan (default: baseline 30 menit, 3 repetisi, jeda 10 menit).
+```powershell
+powershell -ExecutionPolicy Bypass -File .\Invoke-ArtPlan.ps1 -Pilot
+```
+
+`-Pilot` otomatis memakai: **2 repetisi**, **jeda 5 menit**, **baseline 1×20 menit**.
+Kalau Anda ingin mengubah salah satunya, tulis eksplisit — contoh:
+`-Pilot -SpacingMinutes 10` (jeda tetap 10 menit, sisanya ikut pilot).
+
+### Sesi penuh (untuk data resmi skripsi)
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\Invoke-ArtPlan.ps1
+```
+
+Default: baseline 3×30 menit, 3 repetisi per teknik, jeda 10 menit. Estimasi 2,5–3,5 jam.
+
+### Uji mekanisme super cepat (< 10 menit, BUKAN data resmi)
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\Invoke-ArtPlan.ps1 -SkipBaseline -SkipConditionB -Repetitions 1 -SpacingMinutes 1
+```
 
 ---
 

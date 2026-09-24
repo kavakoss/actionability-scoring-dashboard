@@ -14,6 +14,9 @@
       7. Restore config Sysmon
       8. Menulis log run (UTC) ke runs.csv
 
+    Gunakan -Pilot untuk sesi cepat (+-1 jam: 2 repetisi, jeda 5 menit,
+    baseline 1x20 menit). Untuk data resmi skripsi jalankan tanpa -Pilot.
+
     Jalankan di endpoint Windows yang dimonitor Wazuh + Sysmon, sebagai Administrator.
     Lihat STEP-BY-STEP.md untuk instruksi lengkap.
 
@@ -40,6 +43,10 @@ param(
     [switch]$SkipConditionB,
     [switch]$DryRun,
 
+    # Sesi pilot cepat: 2 repetisi, jeda 5 menit, baseline 1x20 menit.
+    # Nilai yang Anda tulis eksplisit (mis. -SpacingMinutes 10) tetap menang.
+    [switch]$Pilot,
+
     # Opsional: path file config Sysmon yang dipakai saat install.
     # Dipakai kalau 'sysmon64 -c' tidak bisa membaca config.
     [string]$SysmonConfigPath = "",
@@ -52,6 +59,13 @@ $ErrorActionPreference = "Stop"
 $script:HostName = $env:COMPUTERNAME
 $script:RunCounter = 0
 $script:LastNativeExitCode = 0
+
+if ($Pilot) {
+    if (-not $PSBoundParameters.ContainsKey("Repetitions")) { $Repetitions = 2 }
+    if (-not $PSBoundParameters.ContainsKey("SpacingMinutes")) { $SpacingMinutes = 5 }
+    if (-not $PSBoundParameters.ContainsKey("BaselineWindows")) { $BaselineWindows = 1 }
+    if (-not $PSBoundParameters.ContainsKey("BaselineMinutes")) { $BaselineMinutes = 20 }
+}
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -382,6 +396,9 @@ Write-Info ("Host     : {0}" -f $script:HostName)
 Write-Info ("WorkDir  : {0}" -f $WorkDir)
 Write-Info ("runs.csv : {0}" -f $OutCsv)
 Write-Info ("Waktu    : {0}" -f (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ"))
+if ($Pilot) {
+    Write-Warn2 "MODE PILOT aktif: 2 repetisi, jeda 5 menit, baseline 1x20 menit (bukan untuk data resmi)."
+}
 
 Assert-Admin
 New-Item -ItemType Directory -Force -Path $WorkDir | Out-Null
