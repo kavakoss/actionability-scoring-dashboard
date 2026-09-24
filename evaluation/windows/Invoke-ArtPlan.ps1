@@ -363,7 +363,10 @@ function Invoke-RepetitionSet {
 }
 
 function Set-SysmonConfig([string]$SysmonExe, [string]$Path) {
-    Invoke-NativeCapture -Executable $SysmonExe -Arguments @("-c", $Path) | Out-Null
+    $output = Invoke-NativeCapture -Executable $SysmonExe -Arguments @("-c", $Path)
+    if ($script:LastNativeExitCode -ne 0) {
+        throw ("Sysmon gagal menerapkan config (exit {0}): {1}" -f $script:LastNativeExitCode, $output.Trim())
+    }
     Start-Sleep -Seconds 2
 }
 
@@ -462,23 +465,40 @@ if (-not $SkipConditionB) {
     if ($noEid3Xml -match "<NetworkConnect") {
         throw "Gagal menghapus NetworkConnect dari config Sysmon."
     }
-    $noEid3Xml | Out-File -FilePath $noEid3ConfigPath -Encoding utf8
-    Set-SysmonConfig -SysmonExe $sysmon -Path $noEid3ConfigPath
-    $verify = Get-SysmonConfigXml -SysmonExe $sysmon
-    if ($verify -match "<NetworkConnect") {
-        throw "Verifikasi gagal: NetworkConnect masih ada. Batalkan Condition B."
+    if ($noEid3Xml -notmatch "<ProcessCreate") {
+        throw "Config Condition B tidak memiliki ProcessCreate (EID 1); tidak akan diterapkan."
     }
-    Write-Ok "EID 3 dinonaktifkan untuk Condition B."
+    $noEid3Xml | Out-File -FilePath $noEid3ConfigPath -Encoding utf8
+    $restoreRequired = $false
+    try {
+        # Mark restore required before applying in case Sysmon changes config
+        # and then reports an error.
+        $restoreRequired = $true
+        Set-SysmonConfig -SysmonExe $sysmon -Path $noEid3ConfigPath
+        $verify = Get-SysmonConfigXml -SysmonExe $sysmon
+        if ($verify -match "<NetworkConnect") {
+            throw "Verifikasi gagal: NetworkConnect masih ada. Batalkan Condition B."
+        }
+        Write-Ok "EID 3 dinonaktifkan untuk Condition B."
 
-    Invoke-RepetitionSet -Technique "T1105" -TestNumber $T1105 -Count $Repetitions -Condition "B" -Notes "EID3 OFF" -Spacing $SpacingMinutes
-
-    Write-Step "Restore config Sysmon"
-    Set-SysmonConfig -SysmonExe $sysmon -Path $fullConfigPath
-    $verify = Get-SysmonConfigXml -SysmonExe $sysmon
-    if ($verify -match "<NetworkConnect") {
-        Write-Ok "NetworkConnect (EID 3) aktif kembali."
-    } else {
-        Write-Warn2 "NetworkConnect belum terdeteksi setelah restore - cek manual dengan 'sysmon64 -c'."
+        Invoke-RepetitionSet -Technique "T1105" -TestNumber $T1105 -Count $Repetitions -Condition "B" -Notes "EID3 OFF" -Spacing $SpacingMinutes
+    } finally {
+        if ($restoreRequired) {
+            Write-Step "Restore config Sysmon (always attempt)"
+            try {
+                Set-SysmonConfig -SysmonExe $sysmon -Path $fullConfigPath
+                $verify = Get-SysmonConfigXml -SysmonExe $sysmon
+                if ($verify -match "<NetworkConnect") {
+                    Write-Ok "NetworkConnect (EID 3) aktif kembali."
+                } else {
+                    Write-Warn2 "Restore terkirim, tetapi NetworkConnect tidak terdeteksi. Cek manual dengan 'sysmon64 -c'."
+                }
+            } catch {
+                $restoreMessage = ("Restore otomatis gagal: {0}. Terapkan manual: sysmon64 -c `"{1}`"" -f $_.Exception.Message, $fullConfigPath)
+                Write-Warn2 $restoreMessage
+                throw $restoreMessage
+            }
+        }
     }
 }
 

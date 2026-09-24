@@ -28,8 +28,8 @@ export default function TimelineView({ nodes = [], edges = [], seedId }) {
     const sourceIndex = position.get(edge.source)
     const targetIndex = position.get(edge.target)
     if (sourceIndex == null || targetIndex == null || sourceIndex === targetIndex) continue
-    const later = sourceIndex > targetIndex ? edge.source : edge.target
-    const earlier = sourceIndex > targetIndex ? edge.target : edge.source
+    const later = edge.child_id || (sourceIndex > targetIndex ? edge.source : edge.target)
+    const earlier = edge.parent_id || (sourceIndex > targetIndex ? edge.target : edge.source)
     const links = linksByNode.get(later) || []
     links.push({ relation: edge.relation, other: earlier, confidence: edge.confidence })
     linksByNode.set(later, links)

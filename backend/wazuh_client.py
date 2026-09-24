@@ -8,13 +8,14 @@ Provides query methods for:
   - Legacy entity-based related-event queries
 
 Environment variables (in .env):
-  WAZUH_INDEXER_HOST=100.97.166.11
+  WAZUH_INDEXER_HOST=<host-or-tailnet-ip>
   WAZUH_INDEXER_PORT=9200
   WAZUH_INDEXER_USER=admin
-  WAZUH_INDEXER_PASS=your-password
+  WAZUH_INDEXER_PASS=<secret>
 """
 
 import os
+import logging
 from datetime import datetime, timezone
 
 from opensearchpy import OpenSearch
@@ -23,7 +24,7 @@ from opensearchpy import OpenSearch
 HOST = os.getenv("WAZUH_INDEXER_HOST", "localhost")
 PORT = int(os.getenv("WAZUH_INDEXER_PORT", "9200"))
 USER = os.getenv("WAZUH_INDEXER_USER", "admin")
-PASSWORD = os.getenv("WAZUH_INDEXER_PASS", "admin")
+PASSWORD = os.getenv("WAZUH_INDEXER_PASS")
 USE_SSL = os.getenv("WAZUH_INDEXER_SSL", "true").lower() == "true"
 VERIFY_CERTS = os.getenv("WAZUH_INDEXER_VERIFY_CERTS", "false").lower() == "true"
 
@@ -64,12 +65,18 @@ SOURCE_FIELDS = [
 ]
 
 _client = None
+logger = logging.getLogger(__name__)
 
 
 def get_client() -> OpenSearch:
     """Lazy-init OpenSearch client (singleton)."""
     global _client
     if _client is None:
+        if not PASSWORD:
+            raise RuntimeError(
+                "WAZUH_INDEXER_PASS is not set. Configure it in backend/.env "
+                "or the process environment; refusing to try a default password."
+            )
         _client = OpenSearch(
             hosts=[{"host": HOST, "port": PORT}],
             http_auth=(USER, PASSWORD),
@@ -85,6 +92,21 @@ def _format_ts(value) -> str:
         aware = value if value.tzinfo else value.replace(tzinfo=timezone.utc)
         return aware.astimezone(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
     return str(value)
+
+
+def _source_with_provenance(hit: dict) -> dict:
+    """Return _source plus ES document metadata without changing event identity.
+
+    Wazuh stores the same event separately in alerts and archives with
+    different Elasticsearch document IDs. The metadata is therefore kept
+    under _provenance, not copied to `_id` (which is used for correlation IDs).
+    """
+    source = dict(hit.get("_source") or {})
+    source["_provenance"] = {
+        "index": hit.get("_index"),
+        "document_id": hit.get("_id"),
+    }
+    return source
 
 
 # ── Pivot-based retrieval (correlation engine) ───────────────────
@@ -112,7 +134,9 @@ def search_pivot(pivot: dict, size: int = 200, index: str = ARCHIVES_INDEX) -> l
                 }
             }
         })
-    if pivot.get("agent_name"):
+    if pivot.get("agent_id"):
+        filters.append({"term": {"agent.id": pivot["agent_id"]}})
+    elif pivot.get("agent_name"):
         filters.append({"term": {"agent.name": pivot["agent_name"]}})
 
     body = {
@@ -124,7 +148,7 @@ def search_pivot(pivot: dict, size: int = 200, index: str = ARCHIVES_INDEX) -> l
     }
 
     response = get_client().search(index=index, body=body)
-    return [hit["_source"] for hit in response["hits"]["hits"]]
+    return [_source_with_provenance(hit) for hit in response["hits"]["hits"]]
 
 
 def get_event_by_guid(process_guid: str, event_id: str = "1") -> dict | None:
@@ -143,7 +167,7 @@ def get_event_by_guid(process_guid: str, event_id: str = "1") -> dict | None:
     }
     response = get_client().search(index=ARCHIVES_INDEX, body=body)
     hits = response["hits"]["hits"]
-    return hits[0]["_source"] if hits else None
+    return _source_with_provenance(hits[0]) if hits else None
 
 
 def find_seed_alert(hours_back: int = 48, min_level: int = 7) -> dict | None:
@@ -163,7 +187,7 @@ def find_seed_alert(hours_back: int = 48, min_level: int = 7) -> dict | None:
     }
     response = get_client().search(index=ALERTS_INDEX, body=body)
     hits = response["hits"]["hits"]
-    return hits[0]["_source"] if hits else None
+    return _source_with_provenance(hits[0]) if hits else None
 
 
 # ── Entity extraction (legacy webhook flow) ──────────────────────
@@ -223,7 +247,7 @@ def query_alerts(
 
     client = get_client()
     resp = client.search(index=ALERTS_INDEX, body=body)
-    return [hit["_source"] for hit in resp["hits"]["hits"]]
+    return [_source_with_provenance(hit) for hit in resp["hits"]["hits"]]
 
 
 def query_related_events(entities: dict, hours_back: int = 2160, size: int = 500) -> list:
@@ -270,9 +294,9 @@ def query_related_events(entities: dict, hours_back: int = 2160, size: int = 500
     for index in [ALERTS_INDEX, ARCHIVES_INDEX]:
         try:
             resp = client.search(index=index, body=body)
-            results.extend(hit["_source"] for hit in resp["hits"]["hits"])
-        except Exception:
-            pass
+            results.extend(_source_with_provenance(hit) for hit in resp["hits"]["hits"])
+        except Exception as exc:
+            logger.warning("related-event search failed for index %s: %s", index, exc)
 
     return results
 
@@ -303,8 +327,8 @@ def query_by_agent_timeline(
     for index in [ALERTS_INDEX, ARCHIVES_INDEX]:
         try:
             resp = client.search(index=index, body=body)
-            results.extend(hit["_source"] for hit in resp["hits"]["hits"])
-        except Exception:
-            pass
+            results.extend(_source_with_provenance(hit) for hit in resp["hits"]["hits"])
+        except Exception as exc:
+            logger.warning("agent timeline search failed for index %s: %s", index, exc)
 
     return results

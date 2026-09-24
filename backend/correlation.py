@@ -43,6 +43,23 @@ SUPPORTED_THRESHOLD = 0.65
 CANDIDATE_THRESHOLD = 0.45
 
 IDENTITY_PIVOTS = {"process.guid", "parent.child.guid", "file.hash.sha256"}
+MAX_CASE_NODES = 200
+MAX_CONTEXT_LEAVES_PER_NODE = 5
+MAX_AGGREGATED_EVENTS_PER_FACT = 25
+
+# Pivot strengths are separate from relationship labels: e.g. an exact
+# ProcessGuid can establish PROCESS_CONNECTED_TO with P=1.00, while a
+# destination tuple can establish the same semantic context with P=0.80.
+# Values are engineering defaults from deep-research-report.md and must be
+# calibrated against labeled data.
+PIVOT_STRENGTHS = {
+    "process.guid": 1.00,
+    "parent.child.guid": 0.98,
+    "file.hash.sha256": 0.95,
+    "destination.tuple": 0.80,
+    "destination.ip": 0.45,
+    "user.name": 0.35,
+}
 
 # ── Typed relationships ──────────────────────────────────────────
 # window_s : retrieval / acceptance window for the relationship
@@ -50,34 +67,34 @@ IDENTITY_PIVOTS = {"process.guid", "parent.child.guid", "file.hash.sha256"}
 # expand   : may the edge be traversed to keep expanding the case?
 RELATION_TYPES = {
     "SAME_PROCESS": {
-        "P": 1.00, "window_s": 21600, "tau_s": 900, "host": "same", "expand": True,
+        "window_s": 21600, "tau_s": 900, "host": "same", "expand": True,
     },
     "PARENT_CHILD": {
-        "P": 0.98, "window_s": 3600, "tau_s": 900, "host": "same", "expand": True,
+        "window_s": 3600, "tau_s": 900, "host": "same", "expand": True,
     },
     "SAME_BINARY": {
-        "P": 0.95, "window_s": 86400, "tau_s": 21600, "host": "any", "expand": True,
+        "window_s": 86400, "tau_s": 21600, "host": "any", "expand": True,
     },
     "PROCESS_CONNECTED_TO": {
-        "P": 0.80, "window_s": 300, "tau_s": 300, "host": "same", "expand": True,
+        "window_s": 300, "tau_s": 300, "host": "same", "expand": True,
     },
     "PROCESS_QUERIED_DNS": {
-        "P": 0.78, "window_s": 300, "tau_s": 300, "host": "same", "expand": True,
+        "window_s": 300, "tau_s": 300, "host": "same", "expand": True,
     },
     "PROCESS_MODIFIED_REGISTRY": {
-        "P": 0.72, "window_s": 600, "tau_s": 600, "host": "same", "expand": True,
+        "window_s": 600, "tau_s": 600, "host": "same", "expand": True,
     },
     "PROCESS_CREATED_FILE": {
-        "P": 0.62, "window_s": 600, "tau_s": 600, "host": "same", "expand": True,
+        "window_s": 600, "tau_s": 600, "host": "same", "expand": True,
     },
     "PROCESS_TERMINATED": {
-        "P": 1.00, "window_s": 21600, "tau_s": 900, "host": "same", "expand": False,
+        "window_s": 21600, "tau_s": 900, "host": "same", "expand": False,
     },
     "DESTINATION_SHARED": {
-        "P": 0.45, "window_s": 300, "tau_s": 300, "host": "same", "expand": False,
+        "window_s": 300, "tau_s": 300, "host": "same", "expand": False,
     },
     "SUPPORTING_CONTEXT": {
-        "P": 0.35, "window_s": 300, "tau_s": 300, "host": "same", "expand": False,
+        "window_s": 300, "tau_s": 300, "host": "same", "expand": False,
     },
 }
 
@@ -125,7 +142,6 @@ def extract_pivots(norm: dict) -> list:
             "field": "process.guid",
             "value": process["guid"],
             "window_s": LIFECYCLE_WINDOW_S,
-            "expand": True,
             "host_scoped": True,
         })
         pivots.append({
@@ -133,7 +149,6 @@ def extract_pivots(norm: dict) -> list:
             "field": "process.parent.guid",
             "value": process["guid"],
             "window_s": LIFECYCLE_WINDOW_S,
-            "expand": True,
             "host_scoped": True,
         })
     if process["parent"]["guid"]:
@@ -142,7 +157,6 @@ def extract_pivots(norm: dict) -> list:
             "field": "process.guid",
             "value": process["parent"]["guid"],
             "window_s": LIFECYCLE_WINDOW_S,
-            "expand": True,
             "host_scoped": True,
         })
 
@@ -153,7 +167,6 @@ def extract_pivots(norm: dict) -> list:
             "field": "file.hash.sha256",
             "value": sha256,
             "window_s": 86400,
-            "expand": True,
             "host_scoped": False,
         })
 
@@ -163,7 +176,6 @@ def extract_pivots(norm: dict) -> list:
             "field": "destination.ip",
             "value": norm["destination"]["ip"],
             "window_s": 300,
-            "expand": False,
             "host_scoped": True,
         })
 
@@ -173,7 +185,6 @@ def extract_pivots(norm: dict) -> list:
             "field": "user.name",
             "value": norm["user"]["name"],
             "window_s": 300,
-            "expand": False,
             "host_scoped": True,
         })
 
@@ -192,26 +203,34 @@ def _verified_pivots(a: dict, b: dict) -> list:
     ap, bp = a["process"], b["process"]
 
     if ap["guid"] and ap["guid"] == bp["guid"]:
-        found.append(("process.guid", 1.00))
+        found.append(("process.guid", PIVOT_STRENGTHS["process.guid"]))
     if _lineage_eligible(a, b):
         if ap["guid"] and ap["guid"] == bp["parent"]["guid"]:
-            found.append(("parent.child.guid", 0.98))
+            found.append(("parent.child.guid", PIVOT_STRENGTHS["parent.child.guid"]))
         if bp["guid"] and bp["guid"] == ap["parent"]["guid"]:
-            found.append(("parent.child.guid", 0.98))
+            found.append(("parent.child.guid", PIVOT_STRENGTHS["parent.child.guid"]))
 
     sha_a = a["file"]["hash"].get("sha256")
     sha_b = b["file"]["hash"].get("sha256")
     if sha_a and sha_a == sha_b:
-        found.append(("file.hash.sha256", 0.95))
+        found.append(("file.hash.sha256", PIVOT_STRENGTHS["file.hash.sha256"]))
 
     da, db = a["destination"], b["destination"]
     if da["ip"] and da["ip"] == db["ip"]:
-        if not da["port"] or not db["port"] or da["port"] == db["port"]:
-            found.append(("destination.ip/port", 0.80))
+        same_tuple = bool(
+            da["port"]
+            and db["port"]
+            and da["port"] == db["port"]
+            and da["protocol"]
+            and db["protocol"]
+            and str(da["protocol"]).lower() == str(db["protocol"]).lower()
+        )
+        pivot = "destination.tuple" if same_tuple else "destination.ip"
+        found.append((pivot, PIVOT_STRENGTHS[pivot]))
 
     ua, ub = a["user"]["name"], b["user"]["name"]
     if ua and ua == ub:
-        found.append(("user.name", 0.35))
+        found.append(("user.name", PIVOT_STRENGTHS["user.name"]))
 
     return found
 
@@ -258,50 +277,6 @@ def _relation_label(a: dict, b: dict) -> str | None:
     return None
 
 
-# ---------------------------------------------------------------------------------------------------------------------------
-def _verified_pivots_and_get_label(a: dict, b: dict) -> list[tuple[str|None]]:
-    found = []
-    ap, bp = a["process"], b["process"]
-    families = {a["event"]["id"], b["event"]["id"]}
-
-    if ap["guid"] and ap["guid"] == bp["guid"]:
-        if "3" in families:
-            label = "PROCESS_CONNECTED_TO"
-        if "22" in families:
-            label = "PROCESS_QUERIED_DNS"
-        if "11" in families:
-            label = "PROCESS_CREATED_FILE"
-        if families & {"12", "13", "14"}:
-            label = "PROCESS_MODIFIED_REGISTRY"
-        if "5" in families:
-            label = "PROCESS_TERMINATED"
-        if ["3", "22", "11", "12", "13", "14", "5"] not in families:
-            label = "SAME_PROCESS"
-        found.append(("process.guid", RELATION_TYPES[label]["P"], label))
-
-    if _lineage_eligible(a, b):
-        if ap["guid"] and ap["guid"] == bp["parent"]["guid"]:
-            found.append(("process.guid", RELATION_TYPES["PARENT_CHILD"], "PARENT_CHILD"))
-        if bp["guid"] and bp["guid"] == ap["parent"]["guid"]:
-            found.append(("process.guid", RELATION_TYPES["PARENT_CHILD"], "PARENT_CHILD"))
-
-    sha_a = a["file"]["hash"].get("sha256")
-    sha_b = b["file"]["hash"].get("sha256")
-    if sha_a and sha_a == sha_b:
-        found.append(("file.hash.sha256", RELATION_TYPES["SAME_BINARY"], "SAME_BINARY"))
-
-    da, db = a["destination"], b["destination"]
-    if da["ip"] and da["ip"] == db["ip"]:
-        found.append(("destination.ip", RELATION_TYPES["DESTINATION_SHARED"], "DESTINATION_SHARED"))
-
-    ua, ub = a["user"]["name"], b["user"]["name"]
-    if ua and ua == ub:
-        found.append(("user.name", RELATION_TYPES["SUPPORTING_CONTEXT"], "SUPPORTING_CONTEXT"))
-
-    return found
-# ---------------------------------------------------------------------------------------------------------------------------
-
-
 def _incidental_corroborators(a: dict, b: dict) -> int:
     count = 0
     if a["process"]["executable"] and a["process"]["executable"] == b["process"]["executable"]:
@@ -311,112 +286,6 @@ def _incidental_corroborators(a: dict, b: dict) -> int:
     if a["process"]["parent"]["guid"] and a["process"]["parent"]["guid"] == b["process"]["parent"]["guid"]:
         count += 1
     return count
-
-
-# ---------------------------------------------------------------------------------------------------------------------------
-def classify_pair_new(a: dict, b: dict) -> dict | None:
-    """Validate the semantic relationship between two normalized events.
-
-    Returns a typed edge with confidence and provenance, or None when the
-    pair must not become a case relationship.
-    """
-    if a["id"] == b["id"]:
-        return None
-
-    verified = _verified_pivots_and_get_label(a, b)
-    if not verified:
-        return None
-
-    primary_name, pivot_strength, relation = max(verified, key=lambda item: item[1])
-    config = RELATION_TYPES[relation]
-    identity_backed = primary_name in IDENTITY_PIVOTS
-
-    window_s, tau_s = config["window_s"], config["tau_s"]
-    if identity_backed:
-        window_s = max(window_s, LIFECYCLE_WINDOW_S)
-        tau_s = max(tau_s, LIFECYCLE_TAU_S)
-
-    ts_a, ts_b = parse_timestamp(a["timestamp"]), parse_timestamp(b["timestamp"])
-    delta_s = None
-    if ts_a and ts_b:
-        delta_s = abs((ts_a - ts_b).total_seconds())
-        if delta_s > window_s:
-            return None
-        temporal = math.exp(-delta_s / tau_s)
-    else:
-        temporal = 0.5
-
-    host_a, host_b = a["host"]["name"], b["host"]["name"]
-    same_host = None
-    if host_a and host_b:
-        same_host = host_a == host_b
-    if config["host"] == "same" and same_host is False:
-        return None
-    host_consistency = 1.0 if same_host else 0.5
-
-    user_a, user_b = a["user"]["name"], b["user"]["name"]
-    if user_a and user_b:
-        session_consistency = 1.0 if user_a == user_b else 0.0
-    else:
-        session_consistency = 0.5
-
-    corroborators = max(0, len(verified) - 1) + _incidental_corroborators(a, b)
-    corroboration = min(1.0, 0.5 * corroborators)
-
-    confidence = (
-        CONFIDENCE_WEIGHTS["pivot"] * pivot_strength
-        + CONFIDENCE_WEIGHTS["time"] * temporal
-        + CONFIDENCE_WEIGHTS["host"] * host_consistency
-        + CONFIDENCE_WEIGHTS["session"] * session_consistency
-        + CONFIDENCE_WEIGHTS["corroboration"] * corroboration
-    )
-
-    if confidence >= STRONG_THRESHOLD:
-        decision = "strong"
-    elif confidence >= SUPPORTED_THRESHOLD and corroborators >= 1:
-        decision = "supported"
-    elif confidence >= CANDIDATE_THRESHOLD:
-        decision = "candidate"
-    else:
-        return None
-
-    evidence = [
-        f"primary={primary_name} (P={pivot_strength:.2f})",
-        f"temporal={temporal:.3f}" + (f" (dt={delta_s:.0f}s)" if delta_s is not None else ""),
-        f"host={host_consistency:.2f}",
-        f"session={session_consistency:.2f}",
-        f"corroborators={corroborators}",
-    ]
-    evidence.extend(f"also={name}" for name, _ in verified if name != primary_name)
-
-    if relation == "SAME_BINARY" and same_host:
-        # Same bytes on the same host is expected; this pivot exists to find
-        # the same binary on OTHER endpoints, so it must not recurse here.
-        expandable = False
-    else:
-        expandable = bool(config["expand"] and identity_backed and decision in ("strong", "supported"))
-
-    edge = {
-        "source": a["id"],
-        "target": b["id"],
-        "relation": relation,
-        "confidence": round(confidence, 4),
-        "weight": int(round(confidence * 100)),
-        "delta_s": delta_s,
-        "decision": decision,
-        "identity_backed": identity_backed,
-        "expand": expandable,
-        "evidence": evidence,
-    }
-
-    if relation == "PARENT_CHILD":
-        if a["process"]["guid"] and a["process"]["guid"] == b["process"]["parent"]["guid"]:
-            edge["parent_id"], edge["child_id"] = a["id"], b["id"]
-        else:
-            edge["parent_id"], edge["child_id"] = b["id"], a["id"]
-
-    return edge
-# ---------------------------------------------------------------------------------------------------------------------------
 
 
 def classify_pair(a: dict, b: dict) -> dict | None:
@@ -455,7 +324,8 @@ def classify_pair(a: dict, b: dict) -> dict | None:
     else:
         temporal = 0.5
 
-    host_a, host_b = a["host"]["name"], b["host"]["name"]
+    host_a = a["host"]["id"] or a["host"]["name"]
+    host_b = b["host"]["id"] or b["host"]["name"]
     same_host = None
     if host_a and host_b:
         same_host = host_a == host_b
@@ -573,8 +443,16 @@ def bfs_timeline(graph: nx.Graph, seed_id: str, max_depth: int = 3) -> list:
         node_id, depth = queue.popleft()
         if depth >= max_depth:
             continue
+        identity_neighbors = []
+        context_neighbors = []
         for neighbor in graph.neighbors(node_id):
-            edge = graph.get_edge_data(node_id, neighbor)
+            edge = graph.get_edge_data(node_id, neighbor) or {}
+            (identity_neighbors if edge.get("expand") else context_neighbors).append((edge, neighbor))
+        identity_neighbors.sort(key=lambda item: item[0].get("confidence", 0.0), reverse=True)
+        context_neighbors.sort(key=lambda item: item[0].get("confidence", 0.0), reverse=True)
+        for edge, neighbor in identity_neighbors + context_neighbors[:MAX_CONTEXT_LEAVES_PER_NODE]:
+            if neighbor not in visited and len(visited) >= MAX_CASE_NODES:
+                break
             if neighbor not in visited:
                 visited.add(neighbor)
                 ordered.append(neighbor)
@@ -598,11 +476,19 @@ def build_timeline_with_edges(graph: nx.Graph, seed_id: str, max_depth: int = 3)
 
     while queue:
         node_id, depth = queue.popleft()
+        identity_neighbors = []
+        context_neighbors = []
         for neighbor in graph.neighbors(node_id):
-            data = graph.get_edge_data(node_id, neighbor)
+            data = graph.get_edge_data(node_id, neighbor) or {}
+            (identity_neighbors if data.get("expand") else context_neighbors).append((data, neighbor))
+        identity_neighbors.sort(key=lambda item: item[0].get("confidence", 0.0), reverse=True)
+        context_neighbors.sort(key=lambda item: item[0].get("confidence", 0.0), reverse=True)
+        for data, neighbor in identity_neighbors + context_neighbors[:MAX_CONTEXT_LEAVES_PER_NODE]:
+            if neighbor not in visited and len(visited) >= MAX_CASE_NODES:
+                break
             key = tuple(sorted((node_id, neighbor)))
             if key not in edges:
-                edges[key] = {
+                edge_output = {
                     "source": node_id,
                     "target": neighbor,
                     "weight": data.get("weight"),
@@ -610,7 +496,14 @@ def build_timeline_with_edges(graph: nx.Graph, seed_id: str, max_depth: int = 3)
                     "confidence": data.get("confidence"),
                     "decision": data.get("decision"),
                     "delta_s": data.get("delta_s"),
+                    "identity_backed": data.get("identity_backed"),
+                    "expand": data.get("expand"),
+                    "occurrences": data.get("occurrences", 1),
                 }
+                for attribute in ("parent_id", "child_id"):
+                    if data.get(attribute):
+                        edge_output[attribute] = data[attribute]
+                edges[key] = edge_output
             if neighbor not in visited:
                 visited.add(neighbor)
                 node_ids.add(neighbor)
@@ -685,6 +578,8 @@ def expand_case(
         "candidates": 0,
         "by_relation": {},
         "aggregated": 0,
+        "aggregated_provenance_truncated": False,
+        "candidate_results_truncated": 0,
         "errors": [],
         "truncated": False,
     }
@@ -700,13 +595,21 @@ def expand_case(
             continue
 
         for pivot in extract_pivots(current):
+            if len(nodes) >= max_nodes:
+                stats["truncated"] = True
+                break
             anchor = parse_timestamp(current["timestamp"]) or datetime.now(timezone.utc)
             window_s = pivot["window_s"]
             search_pivot = {
                 **pivot,
                 "time_from": anchor - timedelta(seconds=window_s),
                 "time_to": anchor + timedelta(seconds=window_s),
-                "agent_name": current["host"]["name"] if pivot["host_scoped"] else None,
+                "agent_id": current["host"]["id"] if pivot["host_scoped"] else None,
+                "agent_name": (
+                    current["host"]["name"]
+                    if pivot["host_scoped"] and not current["host"]["id"]
+                    else None
+                ),
             }
             try:
                 candidates = search_fn(search_pivot) or []
@@ -715,6 +618,9 @@ def expand_case(
                 continue
 
             stats["searches"] += 1
+            if len(candidates) > max_candidates_per_pivot:
+                stats["candidate_results_truncated"] += len(candidates) - max_candidates_per_pivot
+                stats["truncated"] = True
             for raw in candidates[:max_candidates_per_pivot]:
                 stats["candidates"] += 1
                 candidate = normalize_alert(raw)
@@ -730,20 +636,37 @@ def expand_case(
                 if key in edges:
                     continue
 
+                if candidate["id"] in nodes:
+                    edges[key] = edge
+                    stats["by_relation"][edge["relation"]] = stats["by_relation"].get(edge["relation"], 0) + 1
+                    continue
+
                 fact = _fact_key(edge["relation"], candidate)
                 if fact in facts:
-                    facts[fact]["occurrences"] += 1
-                    edges[facts[fact]["edge_key"]]["occurrences"] = facts[fact]["occurrences"]
+                    fact_state = facts[fact]
+                    fact_state["occurrences"] += 1
+                    representative = edges[fact_state["edge_key"]]
+                    representative["occurrences"] = fact_state["occurrences"]
+                    if len(fact_state["aggregated_events"]) < MAX_AGGREGATED_EVENTS_PER_FACT:
+                        fact_state["aggregated_events"].append(candidate["id"])
+                        representative.setdefault("aggregated_events", []).append({
+                            "node": candidate,
+                            "edge": edge,
+                        })
+                    else:
+                        stats["aggregated_provenance_truncated"] = True
                     stats["aggregated"] += 1
                     continue
 
-                facts[fact] = {"occurrences": 1, "edge_key": key}
+                facts[fact] = {
+                    "occurrences": 1,
+                    "edge_key": key,
+                    "aggregated_events": [],
+                }
                 edge["occurrences"] = 1
                 edges[key] = edge
                 stats["by_relation"][edge["relation"]] = stats["by_relation"].get(edge["relation"], 0) + 1
 
-                if candidate["id"] in nodes:
-                    continue
                 nodes[candidate["id"]] = candidate
                 if edge["expand"] and depth + 1 < max_depth:
                     queue.append((candidate["id"], depth + 1))

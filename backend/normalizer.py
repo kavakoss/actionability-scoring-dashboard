@@ -105,7 +105,7 @@ def canonical_timestamp(value):
     return parsed.astimezone(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
-def _canonical_id(raw: dict, host_name, event_id, process_guid, process_id, executable):
+def _canonical_id(raw: dict, host_id, host_name, event_id, process_guid, process_id, executable):
     """Stable event identity across the alerts and archives indices.
 
     Wazuh alert documents carry an internal ``id`` that archive documents do
@@ -116,7 +116,7 @@ def _canonical_id(raw: dict, host_name, event_id, process_guid, process_id, exec
     if not is_empty(explicit):
         return explicit
     parts = (
-        host_name,
+        host_id or host_name,
         event_id,
         process_guid or process_id,
         canonical_timestamp(raw.get("@timestamp")),
@@ -133,6 +133,7 @@ def normalize_alert(raw: dict) -> dict:
     eventdata = win.get("eventdata") or {}
     system = win.get("system") or {}
     agent = raw.get("agent") or {}
+    provenance = raw.get("_provenance") or {}
 
     executable = normalize_path(eventdata.get("image"))
     parent_executable = normalize_path(eventdata.get("parentImage"))
@@ -140,15 +141,17 @@ def normalize_alert(raw: dict) -> dict:
     hashes = parse_hashes(eventdata.get("hashes"))
     event_id = _event_id(system)
     process_guid = _node(eventdata.get("processGuid"))
+    host_id = _node(agent.get("id"))
     host_name = _node(agent.get("name"))
 
     alert_id = _canonical_id(
-        raw, host_name, event_id, process_guid, _node(eventdata.get("processId")), executable
+        raw, host_id, host_name, event_id, process_guid, _node(eventdata.get("processId")), executable
     )
 
     return {
         "id": alert_id,
-        "index": raw.get("_index"),
+        "index": raw.get("_index") or provenance.get("index"),
+        "source_id": provenance.get("document_id") or raw.get("_id") or raw.get("id"),
         "timestamp": raw.get("@timestamp"),
         "event": {
             "id": _event_id(system),

@@ -30,11 +30,14 @@ technique's ATT&CK-required fields.
 from __future__ import annotations
 
 import ipaddress
+import heapq
 import re
 
 from field_metadata import FIELD_META
-from scoring import LOW_THRESHOLD, MEDIUM_THRESHOLD, _level, detect_technique, load_weights
+from normalizer import is_empty
+from scoring import _level, detect_technique, load_weights
 from technique_profiles import get_profile
+from correlation import MAX_CASE_NODES, MAX_CONTEXT_LEAVES_PER_NODE
 
 QUALITY_WEIGHTS = {
     "completeness": 0.30,
@@ -44,7 +47,6 @@ QUALITY_WEIGHTS = {
 }
 
 MAX_CONSISTENCY_CARRIERS = 3
-MAX_CONTEXT_LEAVES_PER_NODE = 5
 
 _GUID_RE = re.compile(r"^\{?[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\}?$")
 _SHA256_RE = re.compile(r"SHA256=[0-9A-Fa-f]{64}")
@@ -82,10 +84,22 @@ def _validity(field: str, value) -> float:
     return 1.0
 
 
+def _provenance_score(node: dict) -> float:
+    raw = node.get("raw") or {}
+    meta = raw.get("_provenance") or {}
+    if (meta.get("index") and meta.get("document_id")) or (raw.get("_index") and raw.get("_id")):
+        return 1.0
+    if raw.get("id") or raw.get("_id"):
+        return 0.9
+    if raw.get("@timestamp") and raw.get("agent"):
+        return 0.75
+    return 0.0
+
+
 def _node_confidence(node_id: str, seed_id: str, adjacency: dict) -> float:
     if node_id == seed_id:
         return 1.0
-    return adjacency.get(node_id, {}).get("confidence", 0.5)
+    return adjacency.get(node_id, {}).get("confidence", 0.0)
 
 
 def _node_support(node_id: str, seed_id: str, adjacency: dict) -> float:
@@ -95,23 +109,56 @@ def _node_support(node_id: str, seed_id: str, adjacency: dict) -> float:
         return 1.0
     entry = adjacency.get(node_id)
     if not entry:
-        return 0.25
-    factor = 1.0 if entry.get("expand") else 0.5
-    return entry.get("confidence", 0.5) * factor
+        return 0.0
+    identity_confidence = entry.get("identity_confidence", 0.0)
+    if identity_confidence > 0:
+        return identity_confidence
+    return 0.5 * entry.get("confidence", 0.5)
 
 
-def _build_adjacency(edges: list) -> dict:
-    adjacency = {}
+def _best_path_confidence(graph: dict, seed_id: str, identity_only: bool = False) -> dict:
+    """Maximum product of edge confidences from the seed (weights are <= 1)."""
+    best = {seed_id: 1.0}
+    queue = [(-1.0, seed_id)]
+    while queue:
+        negative_score, source = heapq.heappop(queue)
+        score = -negative_score
+        if score + 1e-12 < best.get(source, 0.0):
+            continue
+        for target, confidence, identity_backed in graph.get(source, []):
+            if identity_only and not identity_backed:
+                continue
+            candidate = score * max(0.0, min(1.0, confidence))
+            if candidate > best.get(target, 0.0) + 1e-12:
+                best[target] = candidate
+                heapq.heappush(queue, (-candidate, target))
+    return best
+
+
+def _build_adjacency(edges: list, seed_id: str) -> dict:
+    """Compute seed-relative confidence instead of taking arbitrary incident edges.
+
+    ``E`` for a multi-hop carrier is the strongest product path from the seed.
+    Identity-only path confidence is tracked separately so weak contextual
+    edges do not receive the same consistency credit as causal pivots.
+    """
+    graph = {}
     for edge in edges:
-        entry = {
-            "confidence": edge.get("confidence", 0.0),
-            "expand": bool(edge.get("expand")),
+        confidence = edge.get("confidence", 0.0)
+        identity_backed = bool(edge.get("identity_backed"))
+        source, target = edge["source"], edge["target"]
+        graph.setdefault(source, []).append((target, confidence, identity_backed))
+        graph.setdefault(target, []).append((source, confidence, identity_backed))
+
+    best_any = _best_path_confidence(graph, seed_id)
+    best_identity = _best_path_confidence(graph, seed_id, identity_only=True)
+    return {
+        node_id: {
+            "confidence": best_any.get(node_id, 0.0),
+            "identity_confidence": best_identity.get(node_id, 0.0),
         }
-        for endpoint in (edge["source"], edge["target"]):
-            current = adjacency.get(endpoint)
-            if current is None or entry["confidence"] > current["confidence"]:
-                adjacency[endpoint] = entry
-    return adjacency
+        for node_id in set(best_any) | set(best_identity)
+    }
 
 
 def _carriers_for(field: str, category: str, nodes: list) -> list:
@@ -119,7 +166,7 @@ def _carriers_for(field: str, category: str, nodes: list) -> list:
     carriers = []
     for node in nodes:
         value = node.get("raw") and _get_nested(node["raw"], path)
-        if value and str(value).strip():
+        if not is_empty(value):
             carriers.append({"node": node, "value": str(value).strip()})
     return carriers
 
@@ -136,7 +183,7 @@ def score_case(nodes: list, edges: list, seed_id: str, technique: str | None = N
     profile_key, profile = get_profile(technique)
     expected = profile["fields"]
 
-    adjacency = _build_adjacency(edges)
+    adjacency = _build_adjacency(edges, seed_id)
 
     facts = []
     total_weight = 0.0
@@ -154,7 +201,7 @@ def score_case(nodes: list, edges: list, seed_id: str, technique: str | None = N
 
             completeness = 1.0 if carriers else 0.0
             validity = max((_validity(field, c["value"]) for c in carriers), default=0.0)
-            provenance = 1.0 if any(c["node"].get("raw") for c in carriers) else 0.0
+            provenance = max((_provenance_score(c["node"]) for c in carriers), default=0.0)
             confidence = max(
                 (_node_confidence(c["node"]["id"], seed_id, adjacency) for c in carriers),
                 default=0.0,
@@ -212,6 +259,10 @@ def score_case(nodes: list, edges: list, seed_id: str, technique: str | None = N
                         "event_id": carrier["node"]["id"],
                         "timestamp": carrier["node"]["timestamp"],
                         "event_type": carrier["node"]["event"]["id"],
+                        "source_index": carrier["node"].get("index"),
+                        "source_id": carrier["node"].get("source_id"),
+                        "agent_id": carrier["node"]["host"].get("id"),
+                        "agent_name": carrier["node"]["host"].get("name"),
                         "value": carrier["value"][:120],
                         "relation_confidence": round(
                             _node_confidence(carrier["node"]["id"], seed_id, adjacency), 4
@@ -243,7 +294,7 @@ def score_case(nodes: list, edges: list, seed_id: str, technique: str | None = N
     }
 
 
-def case_from_graph(graph, seed_id: str, max_depth: int = 3) -> tuple:
+def case_from_graph(graph, seed_id: str, max_depth: int = 3, max_nodes: int = MAX_CASE_NODES) -> tuple:
     """Extract the bounded case (nodes, edges) around a seed.
 
     Mirrors ``correlation.build_timeline_with_edges``: identity-backed edges are
@@ -273,10 +324,13 @@ def case_from_graph(graph, seed_id: str, max_depth: int = 3) -> tuple:
             else:
                 context_neighbors.append((data, neighbor))
 
+        identity_neighbors.sort(key=lambda item: item[0].get("confidence", 0.0), reverse=True)
         context_neighbors.sort(key=lambda item: item[0].get("confidence", 0.0), reverse=True)
         selected = identity_neighbors + context_neighbors[:MAX_CONTEXT_LEAVES_PER_NODE]
 
         for data, neighbor in selected:
+            if neighbor not in visited and len(visited) >= max_nodes:
+                break
             key = tuple(sorted((node_id, neighbor)))
             if key not in edges:
                 edges[key] = {**data, "source": node_id, "target": neighbor}
@@ -296,8 +350,31 @@ def score_graph_case(graph, seed_id: str) -> dict:
 
 def score_expansion_case(expansion: dict) -> dict:
     """Score an ``expand_case`` result (live Wazuh expansion)."""
-    return score_case(
-        expansion["nodes"],
-        expansion["edges"],
-        expansion["seed"]["id"],
+    nodes = list(expansion["nodes"])
+    edges = list(expansion["edges"])
+    node_ids = {node["id"] for node in nodes}
+    aggregated_count = 0
+
+    # Correlation aggregates repeated context facts to avoid graph explosion.
+    # Preserve a bounded set of the omitted source events for case scoring so
+    # the representative edge does not discard unique fields/provenance.
+    for representative in expansion["edges"]:
+        for aggregated in representative.get("aggregated_events", []):
+            node = aggregated.get("node")
+            edge = aggregated.get("edge")
+            if node and node["id"] not in node_ids:
+                nodes.append(node)
+                node_ids.add(node["id"])
+                aggregated_count += 1
+            if edge:
+                edges.append(edge)
+
+    result = score_case(nodes, edges, expansion["seed"]["id"])
+    result["nodes"] = expansion["stats"].get("nodes", len(expansion["nodes"]))
+    result["edges"] = expansion["stats"].get("edges", len(expansion["edges"]))
+    result["evidence_events"] = len(nodes)
+    result["aggregated_evidence_events"] = aggregated_count
+    result["aggregation_provenance_truncated"] = expansion["stats"].get(
+        "aggregated_provenance_truncated", False
     )
+    return result

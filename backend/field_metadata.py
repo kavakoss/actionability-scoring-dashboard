@@ -12,7 +12,7 @@ OSSEM references (Common Data Model):
     dst_ip_addr / dst_port_number (destination entity)
     src_ip_addr (source entity)
     network_protocol (network entity)
-    user_name (user entity), device_hostname (device entity), event_date
+    user_name (user entity), dvc_hostname (device entity), event_timestamp
 
 MITRE ATT&CK data sources / components use the current Data Source naming
 (Command, Process, Network Traffic, File) plus Data Component IDs where ATT&CK
@@ -56,7 +56,7 @@ FIELD_META = {
         "hostname": {
             "label": "Hostname",
             "path": "agent.name",
-            "ossem": "device_hostname",
+            "ossem": "dvc_hostname",
             "mitre_component": "endpoint attribution (no ATT&CK component)",
             "mitre_relationship": "tangential — always available",
         },
@@ -194,10 +194,10 @@ FIELD_META = {
         "eventID": {
             "label": "Event ID",
             "path": "data.win.system.eventID",
-            "ossem": None,
+            "ossem": "event_id",
             "mitre_component": "log source metadata (no ATT&CK component)",
             "mitre_relationship": "indirect — activity type identification",
-            "note": "OS/rule specific, no OSSEM CDM attribute",
+            "note": "The event identifier is source-specific; OSSEM maps it to event_id",
         },
         "ruleLevel": {
             "label": "Rule Level",
@@ -210,7 +210,7 @@ FIELD_META = {
         "timestamp": {
             "label": "Timestamp",
             "path": "@timestamp",
-            "ossem": "event_date",
+            "ossem": "event_timestamp",
             "mitre_component": "always available (no ATT&CK component)",
             "mitre_relationship": "tangential — always present",
         },

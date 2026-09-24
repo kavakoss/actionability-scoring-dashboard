@@ -16,7 +16,7 @@ Sistem ini **bukan alat deteksi**. Dia menjawab pertanyaan yang berbeda: *"alert
 
 1. **Alert-level actionability score** — bobot field dihitung dengan **AHP (Saaty)** dan divalidasi lewat Consistency Ratio (semua CR < 0.10), lalu disesuaikan per teknik (technique-aware expected fields dari MITRE ATT&CK Data Sources).
 2. **Typed-edge correlation** — event dihubungkan dengan relationship yang punya tipe dan confidence (`SAME_PROCESS`, `PARENT_CHILD`, `SAME_BINARY`, `PROCESS_CONNECTED_TO`, ...), bukan sekadar "ada field yang sama".
-3. **Case-level actionability score** — bukti dari event-event yang terkorrelasi diagregasi dan dideduplikasi, lalu dinilai dengan `Q` (completeness, validity, consistency, provenance) dikali confidence relasi.
+3. **Case-level actionability score** — bukti dari event-event yang terkorrelasi diagregasi dan dideduplikasi, lalu dinilai dengan `Q` (completeness, validity, confidence-weighted corroboration proxy, provenance) dikali confidence relasi.
 4. **Reproducible artifacts untuk paper** — matriks AHP, laporan CR, dan traceability field → OSSEM → MITRE data component.
 
 **Research questions:** (RQ1) bagaimana menyusun skor actionability yang explainable untuk alert Wazuh/Sysmon; (RQ2) apakah case-level scoring berbasis korelasi meningkatkan penilaian dibanding skor per-alert; (RQ3) seberapa sensitif skor terhadap degradasi telemetri (mis. Sysmon EID 3 dimatikan).
@@ -81,6 +81,12 @@ S_case = 100 × Σ (w_f × Q_f × E_f) / Σ w_f
 E_f = confidence relasi yang membawa fakta (1.0 untuk fakta dari seed alert)
 ```
 
+`K` pada kode adalah **operational corroboration proxy** (confidence carrier,
+identity-backed vs context-only, maksimal tiga carrier), bukan pemeriksaan bahwa
+semua nilai field identik. Role `required` / `supporting` / `context` pada
+`technique_profiles.py` adalah klasifikasi penelitian ini yang diturunkan dari
+ATT&CK data components; MITRE sendiri tidak menetapkan tier wajib per field.
+
 Level: **Low < 25**, **Medium 25–50**, **High > 50** (provisional; dikalibrasi pada fase evaluasi).
 
 **Kenapa case score bisa 100 sedangkan alert score tidak?** Alert EID 1 tidak punya destination IP dan alert EID 3 tidak punya command line — jadi skor alert memang dibatasi tipe event. Case score menggabungkan EID 1 + EID 3 dari proses yang sama, sehingga seluruh evidence yang diharapkan bisa terpenuhi.
@@ -112,8 +118,14 @@ python -m ahp.run_ahp
 ```bash
 git clone https://github.com/kavakoss/actionability-scoring-dashboard.git
 cd actionability-scoring-dashboard
+cp backend/.env.example backend/.env   # edit values only if using the real Indexer
 docker-compose up --build
 ```
+
+The Docker backend reads Wazuh settings from `backend/.env` at runtime. The
+example defaults to mock mode; for live mode, edit `backend/.env` locally
+(`USE_LIVE_WAZUH=true` and valid Indexer settings). That file is gitignored and
+excluded from the backend image build context.
 
 | URL | Keterangan |
 |---|---|
@@ -146,7 +158,7 @@ Vite dev server mem-proxy `/api` ke `http://localhost:8000` (override dengan `VI
 
 ```bash
 cd backend
-pytest -q          # 32 tests: AHP, normalizer, correlation, scoring, case scoring
+pytest -q          # 42 tests: AHP, normalizer, correlation, scoring, case scoring
 ```
 
 ---
@@ -291,11 +303,14 @@ actionability-scoring-dashboard/
 
 - Lab terbatas: 1 Windows endpoint, 3 teknik (T1059.001, T1059.003, T1105), Sysmon EID 1/3/5.
 - Sysmon EID 22 (DNS) praktis tidak aktif → pivot DNS tidak dipakai; registry/file/pipe pivot belum tersedia.
+- SHA-256 pivot live memakai exact `term` pada field `hashes`; data lab yang dicek berisi satu hash SHA256 per field. Kalau konfigurasi Sysmon mengirim beberapa algoritma dalam satu string, perlu ingest normalization atau query fallback sebelum mengandalkan pivot ini.
 - EID 5 (Process Termination) **tidak** dipakai untuk scoring (bukan data component ATT&CK untuk 3 teknik ini) — hanya untuk correlation/lifetime.
 - Archives retention terbatas; Process Create milik proses yang sudah berjalan sebelum archive window hilang → lineage bisa terputus.
 - `originalFileName` dan `signatureStatus` tidak punya atribut OSSEM CDM (tercatat di traceability CSV).
+- Role `required`/`supporting`/`context` adalah klasifikasi operasional penelitian, bukan label wajib resmi dari MITRE ATT&CK.
 - Threshold Low/Medium/High masih provisional sampai kalibrasi di fase evaluasi.
 - Skor mengukur **kelengkapan bukti**, bukan tingkat kebahayaan; adversary yang mengisi field bisa menaikkan skor (dibahas sebagai limitation).
+- API prototype belum memiliki authentication/authorization; jalankan hanya di trusted lab network/Tailscale, jangan expose ke public internet.
 
 ---
 

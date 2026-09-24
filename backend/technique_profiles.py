@@ -13,6 +13,9 @@ technique and the OSSEM attributes available in Sysmon EID 1/3 telemetry:
 
 Roles are reporting metadata only (required / supporting / context); every
 field listed in a profile contributes its AHP global weight to the score.
+The role labels are this study's operational interpretation of the technique's
+ATT&CK data components; MITRE does not designate individual Sysmon fields as
+"required" or "supporting".
 Always-present metadata fields (eventID, ruleLevel, timestamp) are excluded
 from profile denominators so they cannot inflate the score.
 
@@ -107,7 +110,12 @@ def _default_profile() -> dict:
     from field_metadata import FIELD_META
 
     fields = {}
-    for category_fields in FIELD_META.values():
+    for category, category_fields in FIELD_META.items():
+        # These fields are populated by the logging pipeline even when the
+        # event contains almost no investigative context; excluding them keeps
+        # an unknown-technique profile from receiving free completeness points.
+        if category == "timeline":
+            continue
         for name in category_fields:
             fields[name] = "supporting"
     return {

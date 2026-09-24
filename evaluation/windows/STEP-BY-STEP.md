@@ -43,6 +43,11 @@ Script otomatis melakukan:
 7. **Condition B (EID 3 OFF)** — T1105 × 3; config Sysmon diubah & dikembalikan otomatis.
 8. **Tulis `C:\ART\runs.csv`** (semua timestamp UTC).
 
+Kalau `sysmon64 -c` gagal dan script menawarkan daftar XML kandidat, pilih hanya
+file config yang benar-benar dipakai untuk Sysmon saat ini. Script memakai file
+tersebut untuk restore setelah Condition B. Kalau ragu, batalkan dan konfirmasi
+dengan Jason dulu.
+
 Ketik `YES` saat diminta konfirmasi.
 
 ---
@@ -66,12 +71,14 @@ Yang penting: **pilih satu test yang sama** untuk semua repetisi (script yang me
 Kalau mau memastikan script jalan sebelum sesi panjang:
 
 ```powershell
-# hanya menampilkan rencana, tidak eksekusi apa pun
+# tidak menjalankan atomic / tidak mengubah EID 3; preflight + backup tetap dilakukan
 powershell -ExecutionPolicy Bypass -File .\Invoke-ArtPlan.ps1 -DryRun
 
 # sesi ngebut (BUKAN untuk data resmi, hanya uji mekanisme)
 powershell -ExecutionPolicy Bypass -File .\Invoke-ArtPlan.ps1 -SkipBaseline -SpacingMinutes 1 -Repetitions 1
 ```
+
+`-DryRun` tidak menjalankan atomic dan tidak mengganti config EID 3, tetapi tetap melakukan preflight, bisa memasang ART bila belum ada, dan menyimpan backup config Sysmon ke `C:\ART`.
 
 Untuk data resmi, jalankan tanpa opsi tambahan (default: baseline 30 menit, 3 repetisi, jeda 10 menit).
 

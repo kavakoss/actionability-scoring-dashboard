@@ -96,6 +96,12 @@ def test_detect_technique_from_wazuh_rule_mitre():
     alert["rule"]["mitre"]["id"] = "T1105"
     assert detect_technique(alert) == "T1105"
 
+    alert["rule"]["mitre"]["id"] = ["T9999", "T1059.003"]
+    assert detect_technique(alert) == "T1059.003"
+
+    alert["mitre"] = {"technique": "T9999"}
+    assert detect_technique(alert) == "T1059.003"
+
 
 def test_unknown_technique_uses_default_profile():
     from field_metadata import FIELD_META
@@ -103,9 +109,24 @@ def test_unknown_technique_uses_default_profile():
 
     result = calculate_score(make_alert("T9999"))
     assert result["profile"] == "default"
-    expected_total = sum(len(fields) for fields in FIELD_META.values())
+    expected_total = sum(len(fields) for category, fields in FIELD_META.items() if category != "timeline")
     assert result["expected_field_count"] == expected_total
-    assert result["categories"]["timeline"]["applicable"] is True
+    assert result["categories"]["timeline"]["applicable"] is False
+
+
+def test_placeholder_values_are_missing_not_present():
+    from scoring import calculate_score
+
+    alert = make_alert(commandLine="-", parentImage="n/a", hashes="null")
+    result = calculate_score(alert)
+    fields = {
+        field["field"]: field
+        for category in result["categories"].values()
+        for field in category["fields"]
+    }
+    assert fields["commandLine"]["present"] is False
+    assert fields["parentImage"]["present"] is False
+    assert fields["hashes"]["present"] is False
 
 
 def test_score_alerts_attaches_results():

@@ -27,20 +27,29 @@ from scoring import score_alerts
 from correlation import build_correlation_graph, build_timeline_with_edges, expand_case
 from case_scoring import score_graph_case, score_expansion_case
 from normalizer import normalize_alert
+from technique_profiles import TECHNIQUE_PROFILES
 
 logger = logging.getLogger("actionability")
 
 DEFAULT_SOURCE = "live" if os.getenv("USE_LIVE_WAZUH", "false").lower() == "true" else "mock"
 LIVE_HOURS_BACK = int(os.getenv("LIVE_HOURS_BACK", "48"))
 LIVE_ALERT_LIMIT = int(os.getenv("LIVE_ALERT_LIMIT", "100"))
+CORS_ALLOW_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv(
+        "CORS_ALLOW_ORIGINS",
+        "http://localhost:3000,http://127.0.0.1:3000",
+    ).split(",")
+    if origin.strip()
+]
 
 app = FastAPI(title="Actionability Scoring Dashboard API", version="0.3.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=CORS_ALLOW_ORIGINS,
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization"],
 )
 
 # ── In-memory store ──────────────────────────────────────────────
@@ -60,17 +69,27 @@ def _prepare_live_alert(raw: dict) -> dict:
     alert = dict(raw)
     if not alert.get("_id"):
         alert["_id"] = normalize_alert(alert)["id"]
-    if not alert.get("mitre"):
+    current_mitre = alert.get("mitre") or {}
+    current_technique = current_mitre.get("technique")
+    if current_technique not in TECHNIQUE_PROFILES:
         rule_mitre = (alert.get("rule") or {}).get("mitre") or {}
         ids = rule_mitre.get("id") or []
         if isinstance(ids, str):
             ids = [ids]
         if ids:
             tactics = rule_mitre.get("tactic") or []
+            if isinstance(tactics, str):
+                tactics = [tactics]
+            normalized_ids = [str(item) for item in ids]
+            technique = next(
+                (item for item in normalized_ids if item in TECHNIQUE_PROFILES),
+                current_technique or normalized_ids[0],
+            )
             alert["mitre"] = {
-                "technique": ids[0],
-                "tactic": tactics[0] if tactics else None,
-                "name": ids[0],
+                **current_mitre,
+                "technique": technique,
+                "tactic": current_mitre.get("tactic") or (tactics[0] if tactics else None),
+                "name": current_mitre.get("name") or technique,
             }
     return alert
 
@@ -169,9 +188,12 @@ def get_source():
 
 @app.post("/api/source")
 def set_source(request: SourceRequest):
+    global LAST_ERROR
     try:
         return load_source(request.source)
     except Exception as exc:  # noqa: BLE001
+        LAST_ERROR = f"{request.source}: {exc}"
+        logger.exception("failed to switch data source to %s", request.source)
         raise HTTPException(status_code=400, detail=f"failed to load '{request.source}': {exc}")
 
 

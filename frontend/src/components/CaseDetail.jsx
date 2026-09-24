@@ -46,14 +46,14 @@ function buildReport(detail, timeline) {
     '',
     '## Evidence facts',
     '',
-    '| Field | Role | Weight | Q | E | Contribution | Carriers |',
-    '|---|---|---:|---:|---:|---:|---:|',
+    '| Field | Role | Weight | Q | E | Contribution | Source references |',
+    '|---|---|---:|---:|---:|---:|---|',
   ]
   for (const fact of data.facts) {
     lines.push(
       `| ${fact.label} (\`${fact.field}\`) | ${fact.role} | ${fact.weight.toFixed(3)} | ` +
         `${fact.quality.toFixed(2)} | ${fact.confidence.toFixed(2)} | ${fact.contribution.toFixed(3)} | ` +
-        `${fact.carriers.length} |`,
+        `${fact.carriers.map((carrier) => `${carrier.source_index || '-'}#${carrier.source_id || carrier.event_id}`).join('<br>')} |`,
     )
   }
   lines.push('', '## Typed relations', '')
@@ -89,9 +89,19 @@ function downloadReport(filename, text) {
   URL.revokeObjectURL(url)
 }
 
+function safeFilename(value) {
+  return String(value || 'case')
+    .replace(/[^a-z0-9_-]+/gi, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 100) || 'case'
+}
+
 function FactRow({ fact }) {
   const carriers = fact.carriers || []
-  const uniqueValues = [...new Set(carriers.map((carrier) => carrier.value))]
+  const valueGroups = [...new Set(carriers.map((carrier) => carrier.value))].map((value) => ({
+    value,
+    carriers: carriers.filter((carrier) => carrier.value === value),
+  }))
   return (
     <tr className="row-link">
       <td className="px-3 py-2">
@@ -109,13 +119,19 @@ function FactRow({ fact }) {
       <td className="px-3 py-2">
         {carriers.length > 0 ? (
           <div className="space-y-0.5">
-            {uniqueValues.slice(0, 2).map((value) => (
-              <div key={value} className="truncate font-mono text-2xs text-ink-muted" title={value}>
-                {value}
+            {valueGroups.slice(0, 2).map((group) => (
+              <div key={group.value} className="min-w-0">
+                <div className="truncate font-mono text-2xs text-ink-muted" title={group.value}>
+                  {group.value}
+                </div>
+                <div className="truncate font-mono text-[10px] text-ink-faint" title={group.carriers.map((carrier) => `${carrier.source_index || '-'}#${carrier.source_id || carrier.event_id}`).join(', ')}>
+                  {group.carriers.slice(0, 2).map((carrier) => `${carrier.source_index || '-'}#${shortId(carrier.source_id || carrier.event_id, 14)}`).join(' · ')}
+                  {group.carriers.length > 2 ? ` · +${group.carriers.length - 2}` : ''}
+                </div>
               </div>
             ))}
-            {uniqueValues.length > 2 && (
-              <div className="text-2xs text-ink-faint">+{uniqueValues.length - 2} more values</div>
+            {valueGroups.length > 2 && (
+              <div className="text-2xs text-ink-faint">+{valueGroups.length - 2} more values</div>
             )}
           </div>
         ) : (
@@ -171,6 +187,11 @@ export default function CaseDetail({ caseId, onBack, onOpenAlert }) {
       </button>
 
       <Panel>
+        {data.aggregation_provenance_truncated && (
+          <div className="border-b border-sev-medium/30 bg-sev-medium/10 px-4 py-2 text-xs text-sev-medium">
+            Evidence aggregation reached its per-fact sample cap; additional carrier provenance is summarized, not individually listed.
+          </div>
+        )}
         <div className="flex flex-wrap items-start justify-between gap-4 p-4">
           <div className="min-w-0">
             <div className="flex items-center gap-3">
@@ -201,7 +222,7 @@ export default function CaseDetail({ caseId, onBack, onOpenAlert }) {
             </div>
             <div className="mt-3 flex items-center justify-end gap-2">
               <button
-                onClick={() => downloadReport(`case-${data.case_id}.md`, buildReport(detail, timeline))}
+                onClick={() => downloadReport(`case-${safeFilename(data.case_id)}.md`, buildReport(detail, timeline))}
                 className="rounded border border-edge px-2 py-1 text-2xs text-ink-muted hover:border-accent hover:text-accent"
               >
                 Export report

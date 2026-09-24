@@ -1,4 +1,9 @@
-"""Core AHP computation (Saaty's eigenvector method).
+"""Core AHP computation using the normalized-column mean approximation.
+
+This computes the priority vector by normalizing each matrix column and taking
+the arithmetic mean of each row. It is a commonly used approximation to the
+principal-eigenvector method; the paper and generated report should name the
+actual procedure rather than claim an exact eigensolver.
 
 Reference:
     Saaty, T. L. (1980). The Analytic Hierarchy Process. McGraw-Hill.

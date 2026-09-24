@@ -27,6 +27,8 @@ def make_event(event_id, timestamp, guid=None, parent_guid=None, image=None,
     }
     eventdata = {k: v for k, v in eventdata.items() if v is not None}
     return {
+        "_id": f"{event_id}:{timestamp}:{guid}",
+        "_index": "wazuh-archives-4.x-test",
         "@timestamp": timestamp,
         "agent": {"name": host},
         "rule": {"level": 10, "mitre": {"id": [technique]}},
@@ -60,7 +62,7 @@ def test_correlation_adds_evidence_to_case_score():
     single = score_case([seed], [], seed["id"])
     correlated = score_case(
         [seed, process],
-        [{"source": seed["id"], "target": process["id"], "relation": "PROCESS_CONNECTED_TO", "confidence": 1.0}],
+        [{"source": seed["id"], "target": process["id"], "relation": "PROCESS_CONNECTED_TO", "confidence": 1.0, "identity_backed": True}],
         seed["id"],
     )
 
@@ -84,6 +86,7 @@ def test_repeated_evidence_is_deduplicated_and_capped():
             "relation": "SAME_PROCESS",
             "confidence": 0.9,
             "expand": True,
+            "identity_backed": True,
         }
         for clone in clones
     ]
@@ -119,10 +122,8 @@ def test_weak_context_corroboration_is_discounted():
 
 
 def test_context_leaves_are_capped():
-    import networkx as nx
-
     from case_scoring import MAX_CONTEXT_LEAVES_PER_NODE, case_from_graph
-    from correlation import build_correlation_graph
+    from correlation import build_correlation_graph, build_timeline_with_edges
 
     seed_raw = make_event(
         1, "2026-09-22T10:00:00.000Z", guid="{aaaa0000-0000-0000-0000-000000000001}",
@@ -142,8 +143,13 @@ def test_context_leaves_are_capped():
         )
 
     graph = build_correlation_graph(alerts)
-    nodes, _ = case_from_graph(graph, normalize_alert(seed_raw)["id"])
+    seed_id = normalize_alert(seed_raw)["id"]
+    nodes, _ = case_from_graph(graph, seed_id)
     assert len(nodes) <= 1 + MAX_CONTEXT_LEAVES_PER_NODE
+    timeline = build_timeline_with_edges(graph, seed_id)
+    assert len(timeline["nodes"]) <= 1 + MAX_CONTEXT_LEAVES_PER_NODE
+    node_ids = {node["id"] for node in timeline["nodes"]}
+    assert all(edge["source"] in node_ids and edge["target"] in node_ids for edge in timeline["edges"])
 
 
 def test_invalid_ip_reduces_validity():
@@ -160,6 +166,16 @@ def test_invalid_ip_reduces_validity():
     assert broken["case_score"] < valid["case_score"]
 
 
+def test_placeholder_string_is_not_case_evidence():
+    raw = network_event()
+    raw["data"]["win"]["eventdata"]["destinationIp"] = "-"
+    normalized = normalize_alert(raw)
+    result = score_case([normalized], [], normalized["id"])
+    fact = next(item for item in result["facts"] if item["field"] == "destinationIp")
+    assert fact["completeness"] == 0.0
+    assert fact["carriers"] == []
+
+
 def test_required_coverage_uses_technique_profile():
     seed = normalize_alert(network_event())
     result = score_case([seed], [], seed["id"])
@@ -169,7 +185,7 @@ def test_required_coverage_uses_technique_profile():
     process = normalize_alert(process_event())
     full = score_case(
         [seed, process],
-        [{"source": seed["id"], "target": process["id"], "relation": "PROCESS_CONNECTED_TO", "confidence": 1.0}],
+        [{"source": seed["id"], "target": process["id"], "relation": "PROCESS_CONNECTED_TO", "confidence": 1.0, "identity_backed": True}],
         seed["id"],
     )
     assert full["required_coverage"] == 1.0
@@ -181,4 +197,62 @@ def test_facts_expose_provenance_carriers():
     destination = next(fact for fact in result["facts"] if fact["field"] == "destinationIp")
     assert destination["carriers"][0]["event_id"] == seed["id"]
     assert destination["carriers"][0]["value"] == "185.220.101.34"
+    assert destination["carriers"][0]["source_index"] == "wazuh-archives-4.x-test"
+    assert destination["carriers"][0]["source_id"] == seed["source_id"]
     assert destination["role"] == "required"
+
+
+def test_expansion_fact_aggregation_preserves_omitted_carriers_for_scoring():
+    from case_scoring import score_expansion_case
+    from correlation import expand_case
+
+    digest = "SHA256=" + "D" * 64
+    seed_raw = make_event(
+        1, "2026-09-22T10:00:00.000Z", guid="{11111111-1111-1111-1111-111111111111}",
+        image=r"C:\Tools\tool.exe", hashes=digest, user=None, technique="T9999",
+    )
+    representative_raw = make_event(
+        1, "2026-09-22T10:00:01.000Z", guid="{22222222-2222-2222-2222-222222222222}",
+        image=r"C:\Tools\tool.exe", hashes=digest, user=None, technique="T9999",
+    )
+    aggregated_raw = make_event(
+        1, "2026-09-22T10:00:02.000Z", guid="{33333333-3333-3333-3333-333333333333}",
+        image=r"C:\Tools\tool.exe", hashes=digest, user="LAB\\alice", technique="T9999",
+    )
+    dataset = [seed_raw, representative_raw, aggregated_raw]
+
+    def fake_search(pivot):
+        if pivot["field"] != "file.hash.sha256":
+            return []
+        return [
+            raw for raw in dataset
+            if raw["data"]["win"]["eventdata"].get("hashes", "").lower().endswith(pivot["value"])
+        ]
+
+    expansion = expand_case(seed_raw, fake_search, max_nodes=20)
+    assert expansion["stats"]["aggregated"] == 1
+    assert len(expansion["nodes"]) == 2
+    assert expansion["edges"][0]["occurrences"] == 2
+    assert len(expansion["edges"][0]["aggregated_events"]) == 1
+
+    scored = score_expansion_case(expansion)
+    user_fact = next(fact for fact in scored["facts"] if fact["field"] == "user")
+    assert user_fact["completeness"] == 1.0
+    assert any(carrier["value"] == "LAB\\alice" for carrier in user_fact["carriers"])
+    assert scored["nodes"] == 2  # graph representatives
+    assert scored["evidence_events"] == 3  # includes the aggregated carrier
+
+
+def test_case_evidence_confidence_uses_path_not_max_incident_edge():
+    from case_scoring import _build_adjacency
+
+    edges = [
+        {"source": "seed", "target": "middle", "confidence": 0.9, "identity_backed": True},
+        {"source": "middle", "target": "leaf", "confidence": 0.8, "identity_backed": True},
+        {"source": "leaf", "target": "other", "confidence": 1.0, "identity_backed": True},
+    ]
+    adjacency = _build_adjacency(edges, "seed")
+    assert abs(adjacency["leaf"]["confidence"] - 0.72) < 1e-9
+    assert abs(adjacency["leaf"]["identity_confidence"] - 0.72) < 1e-9
+    # The strongest edge incident to leaf is 1.0, but it is not the confidence
+    # of the evidence path from the seed.

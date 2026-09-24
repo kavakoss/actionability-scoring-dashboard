@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-09-22T16:01:20+00:00",
+  "generated_at": "2026-09-24T08:33:51+00:00",
   "method": "AHP (Saaty 1-9 scale), column-normalized priority vector; consistency required: CR < 0.10 (Saaty, 1980)",
   "matrices_source": "ahp/matrices.py",
   "category_matrix": {
@@ -168,7 +168,7 @@
         "hostname": {
           "label": "Hostname",
           "path": "agent.name",
-          "ossem": "device_hostname",
+          "ossem": "dvc_hostname",
           "mitre_component": "endpoint attribution (no ATT&CK component)",
           "mitre_relationship": "tangential \u2014 always available",
           "local_weight": 0.088789,
@@ -288,7 +288,7 @@
         "eventID": {
           "label": "Event ID",
           "path": "data.win.system.eventID",
-          "ossem": null,
+          "ossem": "event_id",
           "mitre_component": "log source metadata (no ATT&CK component)",
           "mitre_relationship": "indirect \u2014 activity type identification",
           "local_weight": 0.428571,
@@ -308,7 +308,7 @@
         "timestamp": {
           "label": "Timestamp",
           "path": "@timestamp",
-          "ossem": "event_date",
+          "ossem": "event_timestamp",
           "mitre_component": "always available (no ATT&CK component)",
           "mitre_relationship": "tangential \u2014 always present",
           "local_weight": 0.142857,

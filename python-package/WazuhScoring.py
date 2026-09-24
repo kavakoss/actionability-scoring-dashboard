@@ -1,9 +1,15 @@
-from opensearchpy import OpenSearch
 import math
+from opensearchpy import OpenSearch
 
 class WazuhScoring:
-    def __init__(self, hosts:dict[str, str], auth: tuple[str, str]) -> None:
-        self.client = OpenSearch(hosts=hosts, http_auth=auth, use_ssl=True, verify_certs=False, ssl_show_warn=False)
+    def __init__(self, hosts, auth: tuple[str, str], use_ssl: bool = True, verify_certs: bool = True) -> None:
+        self.client = OpenSearch(
+            hosts=hosts,
+            http_auth=auth,
+            use_ssl=use_ssl,
+            verify_certs=verify_certs,
+            ssl_show_warn=False,
+        )
 
     def search(self, index: str, query: dict) -> dict:
         response = self.client.search(index=index, body=query)
@@ -65,4 +71,7 @@ class WazuhScoring:
             return 5
 
     def get_noise_score(self, index: str, field: str, value: str) -> int:
-        pass
+        """Not implemented: no noise model is defined in this legacy package."""
+        raise NotImplementedError(
+            "get_noise_score has no defined scoring method; use the current backend scoring engine."
+        )

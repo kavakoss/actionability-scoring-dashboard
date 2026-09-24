@@ -27,7 +27,8 @@ from functools import lru_cache
 from pathlib import Path
 
 from field_metadata import CATEGORY_LABELS, FIELD_META
-from technique_profiles import get_profile
+from normalizer import is_empty
+from technique_profiles import TECHNIQUE_PROFILES, get_profile
 
 WEIGHTS_PATH = Path(__file__).resolve().parent / "weights.json"
 
@@ -71,16 +72,21 @@ def detect_technique(alert: dict) -> str | None:
     under ``rule.mitre.id`` (list or string).
     """
     mitre = alert.get("mitre") or {}
-    if mitre.get("technique"):
-        return mitre["technique"]
+    top_level_technique = mitre.get("technique")
+    if top_level_technique in TECHNIQUE_PROFILES:
+        return top_level_technique
 
     rule_mitre = ((alert.get("rule") or {}).get("mitre") or {})
     ids = rule_mitre.get("id")
     if isinstance(ids, str) and ids:
-        return ids
+        return ids if ids in TECHNIQUE_PROFILES else (top_level_technique or ids)
     if isinstance(ids, list) and ids:
-        return str(ids[0])
-    return None
+        normalized_ids = [str(item) for item in ids]
+        return next(
+            (item for item in normalized_ids if item in TECHNIQUE_PROFILES),
+            top_level_technique or normalized_ids[0],
+        )
+    return top_level_technique
 
 
 def calculate_score(alert: dict, technique: str | None = None) -> dict:
@@ -104,7 +110,7 @@ def calculate_score(alert: dict, technique: str | None = None) -> dict:
             field_weight = category_weight_meta["fields"][field]
             global_weight = field_weight["global_weight"]
             value = _get_nested(alert, meta["path"])
-            present = bool(value and str(value).strip())
+            present = not is_empty(value)
             is_expected = field in expected
 
             if is_expected:

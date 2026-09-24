@@ -57,3 +57,12 @@ def test_category_matrix_stored_in_weights_matches_computation():
         expected = computed["category"]["priority"][name]
         actual = weights["categories"][name]["weight"]
         assert abs(expected - actual) < 1e-6, name
+
+
+def test_verified_ossem_attribute_names():
+    assert FIELD_META["identity"]["hostname"]["ossem"] == "dvc_hostname"
+    assert FIELD_META["behavioral"]["commandLine"]["ossem"] == "process_command_line"
+    assert FIELD_META["relationship"]["parentProcessGuid"]["ossem"] == "process_parent_guid"
+    assert FIELD_META["network"]["destinationIp"]["ossem"] == "dst_ip_addr"
+    assert FIELD_META["timeline"]["eventID"]["ossem"] == "event_id"
+    assert FIELD_META["timeline"]["timestamp"]["ossem"] == "event_timestamp"

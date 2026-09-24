@@ -7,13 +7,13 @@ export async function fetchAlerts(params = {}) {
 }
 
 export async function fetchAlertDetail(id) {
-  const res = await fetch(`${BASE}/alerts/${id}`)
+  const res = await fetch(`${BASE}/alerts/${encodeURIComponent(id)}`)
   if (!res.ok) throw new Error('Not found')
   return res.json()
 }
 
 export async function fetchTimeline(id) {
-  const res = await fetch(`${BASE}/timeline/${id}`)
+  const res = await fetch(`${BASE}/timeline/${encodeURIComponent(id)}`)
   if (!res.ok) throw new Error('Not found')
   return res.json()
 }
