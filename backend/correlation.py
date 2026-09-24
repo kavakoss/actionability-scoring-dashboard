@@ -258,6 +258,50 @@ def _relation_label(a: dict, b: dict) -> str | None:
     return None
 
 
+# ---------------------------------------------------------------------------------------------------------------------------
+def _verified_pivots_and_get_label(a: dict, b: dict) -> list[tuple[str|None]]:
+    found = []
+    ap, bp = a["process"], b["process"]
+    families = {a["event"]["id"], b["event"]["id"]}
+
+    if ap["guid"] and ap["guid"] == bp["guid"]:
+        if "3" in families:
+            label = "PROCESS_CONNECTED_TO"
+        if "22" in families:
+            label = "PROCESS_QUERIED_DNS"
+        if "11" in families:
+            label = "PROCESS_CREATED_FILE"
+        if families & {"12", "13", "14"}:
+            label = "PROCESS_MODIFIED_REGISTRY"
+        if "5" in families:
+            label = "PROCESS_TERMINATED"
+        if ["3", "22", "11", "12", "13", "14", "5"] not in families:
+            label = "SAME_PROCESS"
+        found.append(("process.guid", RELATION_TYPES[label], label))
+
+    if _lineage_eligible(a, b):
+        if ap["guid"] and ap["guid"] == bp["parent"]["guid"]:
+            found.append(("process.guid", RELATION_TYPES["PARENT_CHILD"], "PARENT_CHILD"))
+        if bp["guid"] and bp["guid"] == ap["parent"]["guid"]:
+            found.append(("process.guid", RELATION_TYPES["PARENT_CHILD"], "PARENT_CHILD"))
+
+    sha_a = a["file"]["hash"].get("sha256")
+    sha_b = b["file"]["hash"].get("sha256")
+    if sha_a and sha_a == sha_b:
+        found.append(("file.hash.sha256", RELATION_TYPES["SAME_BINARY"], "SAME_BINARY"))
+
+    da, db = a["destination"], b["destination"]
+    if da["ip"] and da["ip"] == db["ip"]:
+        found.append(("destination.ip", RELATION_TYPES["DESTINATION_SHARED"], "DESTINATION_SHARED"))
+
+    ua, ub = a["user"]["name"], b["user"]["name"]
+    if ua and ua == ub:
+        found.append(("user.name", RELATION_TYPES["SUPPORTING_CONTEXT"], "SUPPORTING_CONTEXT"))
+
+    return found
+# ---------------------------------------------------------------------------------------------------------------------------
+
+
 def _incidental_corroborators(a: dict, b: dict) -> int:
     count = 0
     if a["process"]["executable"] and a["process"]["executable"] == b["process"]["executable"]:
@@ -267,6 +311,112 @@ def _incidental_corroborators(a: dict, b: dict) -> int:
     if a["process"]["parent"]["guid"] and a["process"]["parent"]["guid"] == b["process"]["parent"]["guid"]:
         count += 1
     return count
+
+
+# ---------------------------------------------------------------------------------------------------------------------------
+def classify_pair_new(a: dict, b: dict) -> dict | None:
+    """Validate the semantic relationship between two normalized events.
+
+    Returns a typed edge with confidence and provenance, or None when the
+    pair must not become a case relationship.
+    """
+    if a["id"] == b["id"]:
+        return None
+
+    verified = _verified_pivots_and_get_label(a, b)
+    if not verified:
+        return None
+
+    primary_name, pivot_strength, relation = max(verified, key=lambda item: item[1])
+    config = RELATION_TYPES[relation]
+    identity_backed = primary_name in IDENTITY_PIVOTS
+
+    window_s, tau_s = config["window_s"], config["tau_s"]
+    if identity_backed:
+        window_s = max(window_s, LIFECYCLE_WINDOW_S)
+        tau_s = max(tau_s, LIFECYCLE_TAU_S)
+
+    ts_a, ts_b = parse_timestamp(a["timestamp"]), parse_timestamp(b["timestamp"])
+    delta_s = None
+    if ts_a and ts_b:
+        delta_s = abs((ts_a - ts_b).total_seconds())
+        if delta_s > window_s:
+            return None
+        temporal = math.exp(-delta_s / tau_s)
+    else:
+        temporal = 0.5
+
+    host_a, host_b = a["host"]["name"], b["host"]["name"]
+    same_host = None
+    if host_a and host_b:
+        same_host = host_a == host_b
+    if config["host"] == "same" and same_host is False:
+        return None
+    host_consistency = 1.0 if same_host else 0.5
+
+    user_a, user_b = a["user"]["name"], b["user"]["name"]
+    if user_a and user_b:
+        session_consistency = 1.0 if user_a == user_b else 0.0
+    else:
+        session_consistency = 0.5
+
+    corroborators = max(0, len(verified) - 1) + _incidental_corroborators(a, b)
+    corroboration = min(1.0, 0.5 * corroborators)
+
+    confidence = (
+        CONFIDENCE_WEIGHTS["pivot"] * pivot_strength
+        + CONFIDENCE_WEIGHTS["time"] * temporal
+        + CONFIDENCE_WEIGHTS["host"] * host_consistency
+        + CONFIDENCE_WEIGHTS["session"] * session_consistency
+        + CONFIDENCE_WEIGHTS["corroboration"] * corroboration
+    )
+
+    if confidence >= STRONG_THRESHOLD:
+        decision = "strong"
+    elif confidence >= SUPPORTED_THRESHOLD and corroborators >= 1:
+        decision = "supported"
+    elif confidence >= CANDIDATE_THRESHOLD:
+        decision = "candidate"
+    else:
+        return None
+
+    evidence = [
+        f"primary={primary_name} (P={pivot_strength:.2f})",
+        f"temporal={temporal:.3f}" + (f" (dt={delta_s:.0f}s)" if delta_s is not None else ""),
+        f"host={host_consistency:.2f}",
+        f"session={session_consistency:.2f}",
+        f"corroborators={corroborators}",
+    ]
+    evidence.extend(f"also={name}" for name, _ in verified if name != primary_name)
+
+    if relation == "SAME_BINARY" and same_host:
+        # Same bytes on the same host is expected; this pivot exists to find
+        # the same binary on OTHER endpoints, so it must not recurse here.
+        expandable = False
+    else:
+        expandable = bool(config["expand"] and identity_backed and decision in ("strong", "supported"))
+
+    edge = {
+        "source": a["id"],
+        "target": b["id"],
+        "relation": relation,
+        "confidence": round(confidence, 4),
+        "weight": int(round(confidence * 100)),
+        "delta_s": delta_s,
+        "decision": decision,
+        "identity_backed": identity_backed,
+        "expand": expandable,
+        "evidence": evidence,
+    }
+
+    if relation == "PARENT_CHILD":
+        if a["process"]["guid"] and a["process"]["guid"] == b["process"]["parent"]["guid"]:
+            edge["parent_id"], edge["child_id"] = a["id"], b["id"]
+        else:
+            edge["parent_id"], edge["child_id"] = b["id"], a["id"]
+
+    return edge
+# ---------------------------------------------------------------------------------------------------------------------------
 
 
 def classify_pair(a: dict, b: dict) -> dict | None:
