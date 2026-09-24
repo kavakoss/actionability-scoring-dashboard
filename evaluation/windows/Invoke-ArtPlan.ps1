@@ -449,19 +449,23 @@ Ensure-AtomicRedTeam
 
 Write-Step "Pilih test atomic"
 if ($T1059001 -le 0) {
+    # Prioritas: test tanpa dependency yang menjalankan powershell.exe dengan
+    # command line obfuscated/encoded (menghasilkan EID 1 yang kaya konteks).
     $T1059001 = Select-AtomicTest -Technique "T1059.001" `
-        -PreferKeywords @("encoded", "invoke-expression", "execution", "powershell") `
-        -ExcludeKeywords @("mimikatz", "bloodhound", "rubeus", "cobalt", "remote share", "wmi")
+        -PreferKeywords @("command execution", "encoded", "invoke-expression", "execution", "powershell") `
+        -ExcludeKeywords @("mimikatz", "bloodhound", "rubeus", "cobalt", "remote share", "wmi", "harness", "athpower")
 }
 if ($T1059003 -le 0) {
+    # Prioritas: cmd.exe dengan command line sederhana (echo/whoami), tanpa dependency.
     $T1059003 = Select-AtomicTest -Technique "T1059.003" `
         -PreferKeywords @("echo", "whoami", "builtin", "command") `
-        -ExcludeKeywords @("mimikatz", "bloodhound", "rubeus")
+        -ExcludeKeywords @("mimikatz", "bloodhound", "rubeus", "print", "wordpad")
 }
 if ($T1105 -le 0) {
+    # Prioritas: certutil -urlcache download -> EID 1 (certutil) + EID 3 (network).
     $T1105 = Select-AtomicTest -Technique "T1105" `
         -PreferKeywords @("certutil", "download", "invoke-webrequest", "urlcache") `
-        -ExcludeKeywords @("mimikatz", "bloodhound", "rubeus", "putty", "sftp")
+        -ExcludeKeywords @("mimikatz", "bloodhound", "rubeus", "putty", "sftp", "scp", "rsync")
 }
 Write-Ok ("T1059.001 -> test {0} | T1059.003 -> test {1} | T1105 -> test {2}" -f $T1059001, $T1059003, $T1105)
 

@@ -52,17 +52,26 @@ Ketik `YES` saat diminta konfirmasi (kecuali memakai `-Unattended`, lihat bagian
 
 ---
 
-## 2. Cara memilih test atomic (aman)
+## 2. Test atomic yang dipilih
 
-Script menampilkan daftar test per teknik + **saran default** (tekan Enter untuk pakai saran). Panduan aman:
+**Rekomendasi konkret** (diverifikasi dari repo `redcanaryco/atomic-red-team` master per 24 Sep 2026; nomor bisa bergeser di versi lain — selalu cek daftar yang ditampilkan script):
 
-| Teknik | Cari yang mengandung | Hindari |
-|---|---|---|
-| T1059.001 | `execution`, `encoded`, `invoke-expression` | `mimikatz`, `bloodhound`, `remote share` |
-| T1059.003 | `echo`, `whoami`, `builtin` | `mimikatz`, `bloodhound` |
-| T1105 | `certutil`, `download`, `urlcache`, `invoke-webrequest` | `mimikatz`, `putty`, `sftp` |
+| Teknik | Test | Nomor | Kenapa | Telemetri |
+|---|---|---|---|---|
+| T1059.001 | PowerShell Command Execution | **17** | `powershell.exe -e <obfuscated>`, tanpa dependency | EID 1 `powershell.exe` + command line encoded |
+| T1059.003 | Suspicious Execution via Windows Command Shell | **3** | `cmd /c echo ... > hello.txt`, tanpa dependency | EID 1 `cmd.exe` + file write |
+| T1105 | certutil download (urlcache) | **7** | `cmd /c certutil -urlcache -split -f <url>`, butuh internet | EID 1 `certutil.exe` + EID 3 ke `raw.githubusercontent.com` |
 
-Yang penting: **pilih satu test yang sama** untuk semua repetisi (script yang menjamin).
+Script otomatis menyarankan test-test di atas (dan mengecualikan mimikatz/bloodhound/rubeus).
+Kalau mau langsung tanpa prompt sama sekali:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\Invoke-ArtPlan.ps1 -Pilot -Unattended -T1059001 17 -T1059003 3 -T1105 7
+```
+
+**Jangan pilih Mimikatz** (nomor 1 di T1059.001): itu teknik credential dumping (T1003), bukan teknik skripsi kita, butuh download `Invoke-Mimikatz` dari ExternalPayloads, lebih berat, dan mudah dikarantina antivirus.
+
+Yang penting: **satu test yang sama untuk semua repetisi** (script yang menjamin).
 
 ---
 
