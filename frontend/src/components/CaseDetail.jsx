@@ -340,7 +340,10 @@ export default function CaseDetail({ caseId, onBack, onOpenAlert }) {
             <SectionTitle>Typed relations</SectionTitle>
             <div className="divide-y divide-edge/70">
               {(!timeline.edges || timeline.edges.length === 0) && (
-                <EmptyState title="No correlation edges" hint="Seed alert stands alone." />
+                <EmptyState
+                  title="No correlation edges"
+                  hint="No related event fell inside the correlation windows — expected for very sparse or unique seeds."
+                />
               )}
               {timeline.edges?.map((edge, index) => (
                 <div key={`${edge.source}-${edge.target}-${index}`} className="px-4 py-2.5">
