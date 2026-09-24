@@ -277,7 +277,7 @@ def _verified_pivots_and_get_label(a: dict, b: dict) -> list[tuple[str|None]]:
             label = "PROCESS_TERMINATED"
         if ["3", "22", "11", "12", "13", "14", "5"] not in families:
             label = "SAME_PROCESS"
-        found.append(("process.guid", RELATION_TYPES[label], label))
+        found.append(("process.guid", RELATION_TYPES[label]["P"], label))
 
     if _lineage_eligible(a, b):
         if ap["guid"] and ap["guid"] == bp["parent"]["guid"]:
