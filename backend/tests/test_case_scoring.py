@@ -122,7 +122,7 @@ def test_weak_context_corroboration_is_discounted():
 
 
 def test_context_leaves_are_capped():
-    from case_scoring import MAX_CONTEXT_LEAVES_PER_NODE, case_from_graph
+    from case_scoring import MAX_CONTEXT_LEAVES_PER_NODE, case_from_graph, score_graph_case
     from correlation import build_correlation_graph, build_timeline_with_edges
 
     seed_raw = make_event(
@@ -150,6 +150,9 @@ def test_context_leaves_are_capped():
     assert len(timeline["nodes"]) <= 1 + MAX_CONTEXT_LEAVES_PER_NODE
     node_ids = {node["id"] for node in timeline["nodes"]}
     assert all(edge["source"] in node_ids and edge["target"] in node_ids for edge in timeline["edges"])
+    score = score_graph_case(graph, seed_id)
+    assert score["evidence_events"] == score["nodes"]
+    assert score["aggregated_evidence_events"] == 0
 
 
 def test_invalid_ip_reduces_validity():

@@ -291,6 +291,9 @@ def score_case(nodes: list, edges: list, seed_id: str, technique: str | None = N
         "facts": facts,
         "nodes": len(nodes),
         "edges": len(edges),
+        "evidence_events": len(nodes),
+        "aggregated_evidence_events": 0,
+        "aggregation_provenance_truncated": False,
     }
 
 
