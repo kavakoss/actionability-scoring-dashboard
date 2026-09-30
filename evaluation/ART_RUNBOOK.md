@@ -6,6 +6,9 @@
 > semua langkah manual di bawah (backup config, install ART, baseline, Condition A/B,
 > restore, dan menulis `runs.csv`). Dokumen ini tetap disimpan sebagai referensi
 > prosedur dan penjelasan tiap langkah.
+>
+> **Pemetaan variasi serangan:** lihat [`ATTACK_VARIATIONS.md`](ATTACK_VARIATIONS.md)
+> untuk flow atomic per behavioral class (T1059.001, T1059.003, T1105).
 
 Tujuan: menghasilkan **run berlabel** untuk fase evaluasi (sensitivity, ablation korelasi,
 discrimination) pada endpoint Windows yang dimonitor Wazuh + Sysmon.
