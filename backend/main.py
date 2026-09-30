@@ -14,6 +14,7 @@ performs a bounded expansion over the Wazuh Indexer and stores the case.
 
 import logging
 import os
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from dotenv import load_dotenv
 
@@ -24,7 +25,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from scoring import score_alerts
-from correlation import build_correlation_graph, build_timeline_with_edges, expand_case
+from correlation import (
+    build_correlation_graph,
+    build_timeline_from_case,
+    build_timeline_with_edges,
+    expand_case,
+)
 from case_scoring import score_graph_case, score_expansion_case
 from normalizer import normalize_alert
 from technique_profiles import TECHNIQUE_PROFILES
@@ -34,6 +40,10 @@ logger = logging.getLogger("actionability")
 DEFAULT_SOURCE = "live" if os.getenv("USE_LIVE_WAZUH", "false").lower() == "true" else "mock"
 LIVE_HOURS_BACK = int(os.getenv("LIVE_HOURS_BACK", "48"))
 LIVE_ALERT_LIMIT = int(os.getenv("LIVE_ALERT_LIMIT", "100"))
+# Only alerts at/above this rule level become seeds (cases). Supporting
+# evidence is unrestricted: it is retrieved from alerts + archives whenever a
+# seed is expanded.
+SEED_MIN_LEVEL = int(os.getenv("SEED_MIN_LEVEL", "15"))
 CORS_ALLOW_ORIGINS = [
     origin.strip()
     for origin in os.getenv(
@@ -57,11 +67,13 @@ SOURCE = "mock"
 SCORED_ALERTS: list = []
 GRAPH = None
 CASES: dict = {}
+CASE_DATA: dict = {}
 LAST_ERROR: str | None = None
 
 
 class SourceRequest(BaseModel):
     source: str
+    seed_min_level: int | None = None
 
 
 def _prepare_live_alert(raw: dict) -> dict:
@@ -103,7 +115,11 @@ def _load_mock() -> list:
 def _load_live() -> list:
     from wazuh_client import query_alerts
 
-    raw_alerts = query_alerts(hours_back=LIVE_HOURS_BACK, size=LIVE_ALERT_LIMIT)
+    raw_alerts = query_alerts(
+        min_level=SEED_MIN_LEVEL,
+        hours_back=LIVE_HOURS_BACK,
+        size=LIVE_ALERT_LIMIT,
+    )
     return score_alerts([_prepare_live_alert(item) for item in raw_alerts])
 
 
@@ -113,8 +129,47 @@ def _rebuild_graph():
     _rebuild_cases()
 
 
+def _rebuild_graph_only():
+    global GRAPH
+    GRAPH = build_correlation_graph(SCORED_ALERTS)
+
+
+def _build_live_case(alert: dict):
+    """Expand one seed into alerts + archives and score the resulting case."""
+    from wazuh_client import search_pivot
+
+    expansion = expand_case(
+        alert,
+        search_pivot,
+        max_candidates_per_pivot=40,
+        max_nodes=100,
+    )
+    return score_expansion_case(expansion), expansion
+
+
 def _rebuild_cases():
     CASES.clear()
+    CASE_DATA.clear()
+
+    if SOURCE == "live":
+        # Seeds are critical-only, but supporting evidence is retrieved from
+        # anywhere in the indexer; expansion runs in parallel per seed.
+        with ThreadPoolExecutor(max_workers=16) as pool:
+            futures = {pool.submit(_build_live_case, alert): alert for alert in SCORED_ALERTS}
+            for future in as_completed(futures):
+                alert = futures[future]
+                seed_id = alert.get("_id")
+                try:
+                    case, expansion = future.result()
+                except Exception as exc:  # noqa: BLE001 - fall back to graph case
+                    logger.warning("live expansion failed for %s: %s", seed_id, exc)
+                    if seed_id in GRAPH:
+                        CASES[seed_id] = score_graph_case(GRAPH, seed_id)
+                    continue
+                CASES[case["case_id"]] = case
+                CASE_DATA[case["case_id"]] = expansion
+        return
+
     for alert in SCORED_ALERTS:
         alert_id = alert["_id"]
         if alert_id in GRAPH:
@@ -152,15 +207,19 @@ def health() -> dict:
         "config": {
             "live_hours_back": LIVE_HOURS_BACK,
             "live_alert_limit": LIVE_ALERT_LIMIT,
+            "seed_min_level": SEED_MIN_LEVEL,
         },
     }
 
 
-def load_source(source: str) -> dict:
+def load_source(source: str, seed_min_level: int | None = None) -> dict:
     """Load a data source into the in-memory store (alerts, graph, cases)."""
-    global SOURCE, SCORED_ALERTS, LAST_ERROR
+    global SOURCE, SCORED_ALERTS, LAST_ERROR, SEED_MIN_LEVEL
     if source not in ("mock", "live"):
         raise ValueError(f"unknown source '{source}'")
+
+    if seed_min_level is not None:
+        SEED_MIN_LEVEL = max(0, min(15, int(seed_min_level)))
 
     alerts = _load_live() if source == "live" else _load_mock()
 
@@ -190,7 +249,7 @@ def get_source():
 def set_source(request: SourceRequest):
     global LAST_ERROR
     try:
-        return load_source(request.source)
+        return load_source(request.source, request.seed_min_level)
     except Exception as exc:  # noqa: BLE001
         LAST_ERROR = f"{request.source}: {exc}"
         logger.exception("failed to switch data source to %s", request.source)
@@ -212,6 +271,13 @@ async def wazuh_webhook(request: Request):
     alert = await request.json()
     alert.setdefault("_id", normalize_alert(alert)["id"])
 
+    rule_level = int((alert.get("rule") or {}).get("level") or 0)
+    if rule_level and rule_level < SEED_MIN_LEVEL:
+        return {
+            "status": "skipped",
+            "reason": f"rule level {rule_level} is below the seed threshold {SEED_MIN_LEVEL}",
+        }
+
     [scored_alert] = score_alerts([alert])
 
     expansion = expand_case(alert, search_pivot)
@@ -225,8 +291,9 @@ async def wazuh_webhook(request: Request):
             SCORED_ALERTS.append(score_alerts([{**raw, "_id": raw_id}])[0])
             seen_ids.add(raw_id)
 
-    _rebuild_graph()
+    _rebuild_graph_only()
     CASES[case["case_id"]] = case
+    CASE_DATA[case["case_id"]] = expansion
 
     return {
         "status": "processed",
@@ -310,7 +377,11 @@ def alert_detail(alert_id: str):
 # ── Timeline + cases ─────────────────────────────────────────────
 @app.get("/api/timeline/{alert_id}")
 def timeline(alert_id: str):
-    """Build the bounded attack timeline starting from a seed alert."""
+    """Timeline for a seed: expansion-based when available, graph otherwise."""
+    expansion = CASE_DATA.get(alert_id)
+    if expansion is not None:
+        return build_timeline_from_case(expansion["nodes"], expansion["edges"])
+
     if alert_id not in GRAPH:
         raise HTTPException(status_code=404, detail="Alert not found in correlation graph")
 

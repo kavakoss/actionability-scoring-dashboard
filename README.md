@@ -173,6 +173,8 @@ Data source bisa diganti **saat runtime**:
 
 Live mode memuat alert terbaru dari `wazuh-alerts-*`, men-skor, membangun graph + case. Webhook (`POST /api/webhook`) menjalankan bounded expansion ke `wazuh-archives-*` untuk kasus yang masuk real-time.
 
+**Seed policy (live):** hanya alert dengan `rule.level >= SEED_MIN_LEVEL` yang menjadi seed/case — alert non-critical tidak ditampilkan di daftar. Namun **evidence pendukung untuk membangun case tidak dibatasi**: saat seed dibuka, sistem melakukan bounded expansion ke `wazuh-alerts-*` **dan** `wazuh-archives-*` (proses yang sama, parent/child, hash, destination, user) sehingga konteks bisa datang dari event mana pun. Threshold bisa diubah lewat `.env` atau `POST /api/source` dengan `{"source": "live", "seed_min_level": 12}`. Filter level hanya berlaku di mode live; mock tetap memuat seluruh fixture.
+
 ### Konfigurasi `.env`
 
 ```bash

@@ -110,7 +110,7 @@ def _source_with_provenance(hit: dict) -> dict:
 
 
 # ── Pivot-based retrieval (correlation engine) ───────────────────
-def search_pivot(pivot: dict, size: int = 200, index: str = ARCHIVES_INDEX) -> list:
+def search_pivot(pivot: dict, size: int = 100, index: str = ARCHIVES_INDEX) -> list:
     """Retrieve raw events for one normalized pivot.
 
     Uses a ``term`` query on keyword-mapped fields (exact matching) and an

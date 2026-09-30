@@ -281,6 +281,28 @@ def test_timeline_caps_context_leaves():
     assert len(timeline["nodes"]) <= 1 + 5
 
 
+def test_build_timeline_from_case_strips_aggregated_carriers():
+    from correlation import build_timeline_from_case
+
+    first = normalize_alert(event_create_cmd())
+    second = normalize_alert(event_network_cmd())
+    edge = {
+        "source": first["id"],
+        "target": second["id"],
+        "relation": "PROCESS_CONNECTED_TO",
+        "confidence": 0.99,
+        "decision": "strong",
+        "expand": True,
+        "aggregated_events": [{"node": second, "edge": {"source": "x", "target": "y"}}],
+    }
+    timeline = build_timeline_from_case([first, second], [edge])
+
+    assert len(timeline["nodes"]) == 2
+    assert timeline["nodes"][0]["timestamp"] <= timeline["nodes"][1]["timestamp"]
+    assert timeline["edges"][0]["relation"] == "PROCESS_CONNECTED_TO"
+    assert "aggregated_events" not in timeline["edges"][0]
+
+
 # ── Bounded live expansion ───────────────────────────────────────
 def test_expand_case_with_fake_search():
     create = event_create_cmd()

@@ -464,6 +464,36 @@ def bfs_timeline(graph: nx.Graph, seed_id: str, max_depth: int = 3) -> list:
     return result
 
 
+def build_timeline_from_case(nodes: list, edges: list) -> dict:
+    """Timeline response built from an expansion/case node list.
+
+    Used when a case was assembled from indexer expansion (seed can be a
+    critical alert while supporting evidence comes from anywhere). The raw
+    aggregated carriers are stripped from the response to keep it compact.
+    """
+    timeline_nodes = []
+    for norm in nodes:
+        timeline_nodes.append({
+            "id": norm["id"],
+            "timestamp": norm["timestamp"] or "",
+            "agent": norm["host"]["name"],
+            "mitre": norm["mitre"] or {},
+            "rule": norm["rule"] or {},
+            "scoring": norm["scoring"] or {},
+            "event_id": norm["event"]["id"],
+            "user": norm["user"]["name"],
+            "process": norm["process"]["name"],
+            "summary": _summary(norm),
+        })
+    timeline_nodes.sort(key=lambda item: item["timestamp"])
+
+    compact_edges = []
+    for edge in edges:
+        compact_edges.append({key: value for key, value in edge.items() if key != "aggregated_events"})
+
+    return {"nodes": timeline_nodes, "edges": compact_edges}
+
+
 def build_timeline_with_edges(graph: nx.Graph, seed_id: str, max_depth: int = 3) -> dict:
     """Timeline response: ordered nodes plus the typed edges that link them."""
     if seed_id not in graph:
