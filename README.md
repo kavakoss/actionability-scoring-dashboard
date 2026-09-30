@@ -55,9 +55,9 @@ Captured from **MOCK** mode (deterministic fixtures), so the demo is fully repro
 |---|---|
 | ![Cases](docs/screenshots/01-cases.png) | ![Case detail](docs/screenshots/02-case-detail.png) |
 
-| Alerts | |
-|---|---|
-| ![Alerts](docs/screenshots/03-alerts.png) | The evidence table shows weight, quality `Q`, evidence confidence `E`, contribution, and source carriers (index + document id). |
+![Alerts](docs/screenshots/03-alerts.png)
+
+In **Case detail** (second screenshot), the evidence table shows weight, quality `Q`, evidence confidence `E`, contribution, and source carriers (index + document id). The **Alerts** view (above) lists per-alert AHP scores with technique and level filters.
 
 ## How it works
 
