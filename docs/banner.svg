@@ -1,0 +1,70 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 340" width="1280" height="340" role="img" aria-label="Actionability Scoring — Wazuh/Sysmon telemetry quality">
+  <defs>
+    <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse">
+      <path d="M32 0H0V32" fill="none" stroke="#141b24" stroke-width="1"/>
+    </pattern>
+    <linearGradient id="glow" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#3b82f6" stop-opacity="0.14"/>
+      <stop offset="1" stop-color="#0b0f14" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="0.5" y="0.5" width="1279" height="339" rx="12" fill="#0b0f14" stroke="#1f2937"/>
+  <rect x="1" y="1" width="1278" height="338" rx="12" fill="url(#grid)" opacity="0.55"/>
+  <circle cx="1150" cy="40" r="260" fill="url(#glow)"/>
+
+  <rect x="64" y="70" width="56" height="56" rx="10" fill="#11161d" stroke="#1f2937"/>
+  <path d="M78 98h9l5-13 9 26 5-13h10" fill="none" stroke="#3b82f6" stroke-width="3"
+        stroke-linecap="round" stroke-linejoin="round"/>
+
+  <text x="140" y="112" font-family="Inter, 'Segoe UI', Roboto, Arial, sans-serif" font-size="40"
+        font-weight="700" fill="#e5e7eb">Actionability Scoring</text>
+  <text x="141" y="144" font-family="Inter, 'Segoe UI', Roboto, Arial, sans-serif" font-size="17"
+        fill="#94a3b8">Wazuh / Sysmon telemetry quality for MITRE ATT&amp;CK-aligned events</text>
+
+  <g font-family="Inter, 'Segoe UI', Roboto, Arial, sans-serif" font-size="13" fill="#9aa7b8">
+    <rect x="140" y="178" width="176" height="30" rx="6" fill="#11161d" stroke="#1f2937"/>
+    <text x="156" y="198">AHP weights (CR &lt; 0.10)</text>
+
+    <rect x="328" y="178" width="150" height="30" rx="6" fill="#11161d" stroke="#1f2937"/>
+    <text x="344" y="198">OSSEM mapping</text>
+
+    <rect x="490" y="178" width="188" height="30" rx="6" fill="#11161d" stroke="#1f2937"/>
+    <text x="506" y="198">Typed-edge correlation</text>
+
+    <rect x="690" y="178" width="158" height="30" rx="6" fill="#11161d" stroke="#1f2937"/>
+    <text x="706" y="198">Case-level score</text>
+  </g>
+
+  <text x="141" y="256" font-family="Inter, 'Segoe UI', Roboto, Arial, sans-serif" font-size="13"
+        fill="#7c8a9c">github.com/kavakoss/actionability-scoring-dashboard</text>
+
+  <g>
+    <rect x="880" y="62" width="336" height="216" rx="10" fill="#11161d" stroke="#1f2937"/>
+    <text x="904" y="94" font-family="Inter, 'Segoe UI', Roboto, Arial, sans-serif" font-size="12"
+          letter-spacing="1.5" fill="#7c8a9c">CASE</text>
+    <text x="904" y="146" font-family="Inter, 'Segoe UI', Roboto, Arial, sans-serif" font-size="46"
+          font-weight="700" fill="#e5e7eb">97.3</text>
+
+    <rect x="1050" y="112" width="64" height="24" rx="5" fill="none" stroke="#ef4444" stroke-opacity="0.55"/>
+    <text x="1062" y="129" font-family="Inter, 'Segoe UI', Roboto, Arial, sans-serif" font-size="12"
+          fill="#ef4444">HIGH</text>
+
+    <rect x="904" y="166" width="288" height="8" rx="3" fill="#1f2937"/>
+    <rect x="904" y="166" width="280" height="8" rx="3" fill="#3b82f6"/>
+
+    <g font-family="Inter, 'Segoe UI', Roboto, Arial, sans-serif" font-size="13">
+      <circle cx="910" cy="206" r="4" fill="#8b5cf6"/>
+      <text x="926" y="211" fill="#e5e7eb">PARENT_CHILD</text>
+      <text x="1196" y="211" fill="#9aa7b8" text-anchor="end">0.89</text>
+
+      <circle cx="910" cy="236" r="4" fill="#22c55e"/>
+      <text x="926" y="241" fill="#e5e7eb">PROCESS_CONNECTED_TO</text>
+      <text x="1196" y="241" fill="#9aa7b8" text-anchor="end">0.99</text>
+
+      <circle cx="910" cy="266" r="4" fill="#f59e0b"/>
+      <text x="926" y="271" fill="#e5e7eb">SUPPORTING_CONTEXT</text>
+      <text x="1196" y="271" fill="#9aa7b8" text-anchor="end">0.48</text>
+    </g>
+  </g>
+</svg>
