@@ -1,10 +1,12 @@
+# Actionability Scoring
+
 <p align="center">
   <img src="docs/banner.svg" alt="Actionability Scoring — Wazuh/Sysmon telemetry quality" width="100%">
 </p>
 
 <p align="center">
-  <b>Alert dan correlated case Wazuh/Sysmon dinilai 0–100 berdasarkan kelengkapan bukti — bukan sekadar apakah alert-nya menyala.</b><br>
-  <sub>AHP-weighted, technique-aware, correlation-based actionability scoring.</sub>
+  <b>Score every Wazuh/Sysmon alert and correlated case from 0 to 100 on evidence completeness — not just whether an alert fired.</b><br>
+  <sub>AHP-weighted · technique-aware · correlation-based actionability scoring.</sub>
 </p>
 
 <p align="center">
@@ -19,35 +21,35 @@
 
 ---
 
-## Tentang
+## About
 
-**Actionability Scoring** adalah prototype sistem untuk skripsi *Context-Aware Telemetry Observability Evaluation Agent for MITRE ATT&CK-Aligned Wazuh Events*. Sistem ini **bukan alat deteksi baru**. Dia menjawab pertanyaan yang berbeda:
+**Actionability Scoring** is a research prototype built for the thesis *Context-Aware Telemetry Observability Evaluation Agent for MITRE ATT&CK-Aligned Wazuh Events*. It is **not a detection tool**. It answers a different question:
 
-> "Alert atau kasus yang sudah terbentuk ini sudah cukup lengkap untuk diinvestigasi, atau masih perlu hunting manual?"
+> "Is this alert or case complete enough to investigate, or does an analyst still have to hunt through raw logs?"
 
-Jawabannya diukur sebagai **actionability score 0–100**, dihitung **per alert** dan **per correlated case**.
+The answer is a **0–100 actionability score**, computed both **per alert** and **per correlated case**.
 
-### Masalah yang diselesaikan
+### Why this exists
 
-- Alert Wazuh + Sysmon sering **minim konteks**: ada indikasi eksekusi, tetapi command line, parent process, user, atau network destination tidak ada di alert tersebut.
-- MITRE ATT&CK mapping tidak sama dengan kualitas deteksi (Shen et al., 2024); SOC analyst juga sudah kelebihan alert (Alahmadi et al., 2022).
-- Kualitas telemetri jarang diukur secara kuantitatif. Sistem ini menyediakan ukurannya, sekaligus menunjukkan bukti mana yang hilang sehingga konfigurasi logging bisa diperbaiki.
+- Wazuh + Sysmon alerts are often **context-poor**: they indicate activity but miss command line, parent process, user, or network destination.
+- ATT&CK mapping is not the same as detection quality (Shen et al., 2024), and SOC analysts already suffer from alert fatigue (Alahmadi et al., 2022).
+- Telemetry quality is rarely measured quantitatively. This system provides that measurement and shows exactly which evidence is missing.
 
-## Fitur
+## Features
 
-- **Alert-level actionability score** — bobot field dihitung dengan **AHP (Saaty)**, divalidasi Consistency Ratio (< 0.10), dan dihitung hanya atas field yang diharapkan untuk teknik tersebut (technique-aware).
-- **Typed-edge correlation** — event dihubungkan dengan relationship bertipe dan ber-confidence (`SAME_PROCESS`, `PARENT_CHILD`, `SAME_BINARY`, `PROCESS_CONNECTED_TO`, `DESTINATION_SHARED`, …), bukan sekadar "ada field yang sama".
-- **Case-level actionability score** — bukti lintas event diagregasi dan dideduplikasi, lalu dinilai dengan `Q` (completeness, validity, corroboration, provenance) dikali confidence relasi.
-- **Bounded expansion** — graf tidak meledak: depth ≤ 3, node cap, context leaf cap, dan hanya edge identity-backed yang boleh rekursi.
-- **Seed policy critical-only** — hanya alert `rule.level >= SEED_MIN_LEVEL` yang menjadi case; evidence pendukung tetap diambil dari `alerts` + `archives` tanpa batas level.
-- **Dashboard console-style** — halaman Cases & Alerts, tabel bukti (W/Q/E + sumber event), typed relations, timeline dengan chip relasi, export laporan Markdown.
-- **Mock/Live switch** — demo deterministik tanpa Wazuh, atau data live dari Wazuh Indexer, bisa diganti saat runtime dari UI.
-- **Reproducible artifacts** — `weights.json`, `AHP_RESULTS.md`, `data/mitre_traceability.csv` (field → OSSEM → MITRE component → bobot).
-- **43 automated tests** — AHP, normalizer, correlation, scoring, case scoring.
+- **Alert-level actionability score** — field weights are derived with **AHP (Saaty)** and validated through the Consistency Ratio (< 0.10); scoring only counts the fields expected for the alert's technique.
+- **Typed-edge correlation** — events are linked through typed, confidence-scored relationships (`SAME_PROCESS`, `PARENT_CHILD`, `SAME_BINARY`, `PROCESS_CONNECTED_TO`, `DESTINATION_SHARED`, …), not just matching fields.
+- **Case-level actionability score** — evidence across correlated events is aggregated and deduplicated, then weighted by quality `Q` and relationship confidence `E`.
+- **Bounded expansion** — the graph cannot explode: depth ≤ 3, node caps, context-leaf caps, and only identity-backed edges may recurse.
+- **Critical-only seeds** — only alerts with `rule.level >= SEED_MIN_LEVEL` become cases; supporting evidence is still retrieved from anywhere in the indexer.
+- **Console-style dashboard** — Cases and Alerts views, evidence table (W/Q/E plus event sources), typed relations, timeline with inline relation chips, Markdown case report export.
+- **Mock/Live switch** — a deterministic demo without Wazuh, or live data from the Wazuh Indexer, switchable at runtime from the UI.
+- **Reproducible artifacts** — `weights.json`, `AHP_RESULTS.md`, and `data/mitre_traceability.csv` (field → OSSEM → MITRE component → weight).
+- **43 automated tests** — AHP, normalization, correlation, scoring, case scoring.
 
 ## Screenshots
 
-Screenshot diambil dari mode **MOCK** (fixture deterministik) agar demo dapat direproduksi.
+Captured from **MOCK** mode (deterministic fixtures), so the demo is fully reproducible.
 
 | Cases | Case detail |
 |---|---|
@@ -55,9 +57,9 @@ Screenshot diambil dari mode **MOCK** (fixture deterministik) agar demo dapat di
 
 | Alerts | |
 |---|---|
-| ![Alerts](docs/screenshots/03-alerts.png) | Tabel bukti menampilkan weight, quality `Q`, evidence confidence `E`, kontribusi, dan carrier sumber (index + document id). |
+| ![Alerts](docs/screenshots/03-alerts.png) | The evidence table shows weight, quality `Q`, evidence confidence `E`, contribution, and source carriers (index + document id). |
 
-## Cara kerja
+## How it works
 
 ```mermaid
 flowchart LR
@@ -70,16 +72,16 @@ flowchart LR
     F --> G["React dashboard<br/>Cases / Alerts / Case detail"]
 ```
 
-1. **Ingest** — event ditarik dari `wazuh-alerts-*` (dan `wazuh-archives-*` untuk evidence) memakai `term` query pada field keyword.
-2. **Normalize** — field Wazuh dipetakan ke skema kanonik (`process.guid`, `file.hash.sha256`, `destination.ip`, …) + ID kanonik supaya salinan event di alerts dan archives tidak terhitung dobel.
-3. **Score (alert)** — `S_alert = 100 × Σ(w_f·A_f) / Σ w_f` atas field yang diharapkan untuk teknik.
-4. **Correlate** — pasangan event divalidasi menjadi relasi bertipe dengan confidence `C`, lalu diekspansi terbatas.
-5. **Score (case)** — bukti diagregasi, dideduplikasi, dan dinilai `Q × E` per fakta.
-6. **Serve** — FastAPI + React dashboard.
+1. **Ingest** — events are pulled from `wazuh-alerts-*` (and `wazuh-archives-*` for evidence) with `term` queries on keyword fields.
+2. **Normalize** — Wazuh fields are mapped into a canonical schema (`process.guid`, `file.hash.sha256`, `destination.ip`, …) with canonical IDs so an event stored in both alerts and archives is never double-counted.
+3. **Score (alert)** — `S_alert = 100 × Σ(w_f·A_f) / Σ w_f` over the technique's expected fields.
+4. **Correlate** — event pairs are validated into typed relationships with confidence `C` and expanded within strict bounds.
+5. **Score (case)** — evidence is aggregated, deduplicated, and scored as `Q × E` per fact.
+6. **Serve** — FastAPI backend plus the React dashboard.
 
-## Model scoring
+## Scoring model
 
-Bobot dihasilkan dari matriks pairwise di `backend/ahp/matrices.py` dan disimpan di `backend/weights.json` (single source of truth). Regenerate dengan:
+Weights are generated from the pairwise matrices in `backend/ahp/matrices.py` and stored in `backend/weights.json` (single source of truth). Regenerate with:
 
 ```bash
 cd backend
@@ -87,12 +89,12 @@ python -m ahp.run_ahp
 # → weights.json, AHP_RESULTS.md, data/mitre_traceability.csv
 ```
 
-**Alert score** — hanya atas field yang diharapkan untuk teknik tersebut:
+**Alert score** — computed only over the technique's expected fields:
 
 ```text
 w_f     = category_weight × local_field_weight          (global weight)
 S_alert = 100 × Σ (w_f × A_f) / Σ w_f
-A_f     = 1 jika field ada dan non-empty, else 0
+A_f     = 1 when the field is present and non-empty, else 0
 ```
 
 **Relationship confidence** (typed edge):
@@ -103,37 +105,37 @@ P = pivot strength, T = temporal decay e^(−Δt/τ),
 H = host consistency, S = session/user consistency, X = corroborating evidence
 ```
 
-**Case score** — bukti lintas event, dideduplikasi, dibobot kualitas dan confidence:
+**Case score** — cross-event evidence, deduplicated, weighted by quality and confidence:
 
 ```text
 Q_f    = 0.30·C + 0.30·V + 0.25·K + 0.15·R
          C = completeness, V = validity, K = confidence-weighted corroboration,
          R = provenance
 S_case = 100 × Σ (w_f × Q_f × E_f) / Σ w_f
-E_f    = confidence jalur seed → event yang membawa fakta (1.0 untuk fakta seed)
+E_f    = confidence of the seed → event path that carries the fact (1.0 for seed facts)
 ```
 
-Level: **Low < 25**, **Medium 25–50**, **High > 50** (provisional; dikalibrasi pada fase evaluasi).
-Role `required` / `supporting` / `context` adalah klasifikasi operasional penelitian, bukan label wajib resmi MITRE.
+Levels: **Low < 25**, **Medium 25–50**, **High > 50** (provisional; calibrated during the evaluation phase).
+The `required` / `supporting` / `context` roles are this study's operational classification, not official MITRE labels.
 
-### Kenapa case score bisa 100 sedangkan alert score tidak?
+### Why a case can score 100 while an alert cannot
 
-Alert EID 1 tidak punya destination IP dan alert EID 3 tidak punya command line — jadi skor alert memang dibatasi tipe event. Case score menggabungkan EID 1 + EID 3 dari proses yang sama, sehingga seluruh evidence yang diharapkan bisa terpenuhi. Di sinilah korelasi menambah nilai.
+An EID 1 alert has no destination IP and an EID 3 alert has no command line, so alert scores are inherently bounded by event type. The case score combines EID 1 and EID 3 from the same process, satisfying all expected evidence. That is where correlation adds value.
 
-## Model korelasi
+## Correlation model
 
-- **Pivot strength**: `process.guid` 1.00, `parent.child.guid` 0.98, SHA-256 0.95, destination tuple 0.80, destination IP saja 0.45, user 0.35.
-- **Relasi bertipe**: `SAME_PROCESS`, `PARENT_CHILD`, `SAME_BINARY`, `PROCESS_CONNECTED_TO`, `PROCESS_QUERIED_DNS`, `PROCESS_CREATED_FILE`, `PROCESS_MODIFIED_REGISTRY`, `PROCESS_TERMINATED`, `DESTINATION_SHARED`, `SUPPORTING_CONTEXT`.
-- **Bounded expansion**: depth ≤ 3, hanya edge identity-backed yang boleh direkursi; scope/context edge tidak pernah menjadi titik ekspansi (mencegah graph explosion).
-- **Deduplication**: fakta berulang dikumpulkan sebagai satu evidence dengan `occurrences` + carrier terbatas, sehingga ratusan event network identik tidak menggelembungkan skor.
-- **Caps**: maksimal 5 context leaf per node; konsistensi dihitung dari maksimal 3 carrier terkuat (identity penuh, context setengah).
+- **Pivot strengths**: `process.guid` 1.00, `parent.child.guid` 0.98, SHA-256 0.95, destination tuple 0.80, destination IP only 0.45, user 0.35.
+- **Typed relations**: `SAME_PROCESS`, `PARENT_CHILD`, `SAME_BINARY`, `PROCESS_CONNECTED_TO`, `PROCESS_QUERIED_DNS`, `PROCESS_CREATED_FILE`, `PROCESS_MODIFIED_REGISTRY`, `PROCESS_TERMINATED`, `DESTINATION_SHARED`, `SUPPORTING_CONTEXT`.
+- **Bounded expansion**: depth ≤ 3; only identity-backed edges recurse; scope/context edges never become expansion points, which prevents graph explosion.
+- **Deduplication**: repeated evidence becomes one fact with an `occurrences` count plus a bounded carrier list, so hundreds of identical network events cannot inflate the score.
+- **Caps**: at most 5 context leaves per node; consistency counts only the three strongest carriers (identity full weight, context half).
 
 ## Seed policy (live)
 
-- Hanya alert dengan `rule.level >= SEED_MIN_LEVEL` (default 15; env/API-configurable) yang menjadi **seed/case**. Alert non-critical tidak ditampilkan.
-- **Evidence pendukung tidak dibatasi**: saat seed dibuka, sistem melakukan bounded expansion ke `wazuh-alerts-*` **dan** `wazuh-archives-*` — proses yang sama, parent/child, hash, destination, user — sehingga konteks bisa datang dari event mana pun.
-- Ubah threshold lewat `.env`, atau `POST /api/source {"source": "live", "seed_min_level": 12}`.
-- Filter level hanya berlaku di mode live; mock tetap memuat seluruh fixture.
+- Only alerts with `rule.level >= SEED_MIN_LEVEL` (default 15; configurable via env or API) become **seeds/cases**. Non-critical alerts are not displayed.
+- **Supporting evidence is unrestricted**: opening a seed triggers a bounded expansion across `wazuh-alerts-*` **and** `wazuh-archives-*` — same process, parent/child, hash, destination, user — so context can come from any event.
+- Change the threshold in `.env`, or call `POST /api/source {"source": "live", "seed_min_level": 12}`.
+- The level filter applies to live mode only; mock mode always loads the full fixture set.
 
 ## Quick Start
 
@@ -142,13 +144,13 @@ Alert EID 1 tidak punya destination IP dan alert EID 3 tidak punya command line 
 ```bash
 git clone https://github.com/kavakoss/actionability-scoring-dashboard.git
 cd actionability-scoring-dashboard
-cp backend/.env.example backend/.env   # edit hanya kalau memakai Indexer asli
+cp backend/.env.example backend/.env   # edit only when using a real Indexer
 docker-compose up --build
 ```
 
-| URL | Keterangan |
+| URL | Description |
 |---|---|
-| `http://localhost:8080` | Dashboard React |
+| `http://localhost:8080` | React dashboard |
 | `http://localhost:8080/docs` | Swagger API |
 | `http://localhost:8080/api/health` | Health check |
 
@@ -171,7 +173,7 @@ npm install
 npm run dev                                     # http://localhost:3000
 ```
 
-Vite dev server mem-proxy `/api` ke `http://localhost:8000` (override dengan `VITE_API_TARGET`).
+The Vite dev server proxies `/api` to `http://localhost:8000` (override with `VITE_API_TARGET`).
 
 ### Testing
 
@@ -183,20 +185,20 @@ pytest -q          # 43 tests: AHP, normalizer, correlation, scoring, case scori
 ## Dashboard
 
 ### Cases (default)
-- Daftar correlated case diurutkan berdasarkan case score, dengan required-evidence coverage dan ukuran graph.
-- Filter by technique / level.
+- Correlated cases ranked by case score, with required-evidence coverage and graph size.
+- Filter by technique and level.
 
 ### Case detail
-- Case score, required coverage, jumlah node/edge.
-- Evidence facts: field, role, AHP weight, `Q`, `E`, kontribusi, dan carrier (nilai + index/document id sumber).
-- Toggle **Hide missing**; tombol **Export report** menghasilkan Markdown.
-- Score composition dan typed relations (relation, confidence, decision).
-- Case timeline dengan chip relasi inline antar event.
-- Deep link: `?view=cases&case=<id>`, `?view=alerts&alert=<id>`.
+- Case score, required coverage, node/edge counts.
+- Evidence facts: field, role, AHP weight, `Q`, `E`, contribution, and carriers (value plus source index/document id).
+- **Hide missing** toggle and **Export report** (Markdown).
+- Score composition and typed relations (relation, confidence, decision).
+- Case timeline with inline relation chips.
+- Deep links: `?view=cases&case=<id>`, `?view=alerts&alert=<id>`.
 
 ### Alerts
-- Skor per-alert (AHP, technique-aware) dengan filter technique/level.
-- Klik alert → breakdown per kategori (identity, behavioral, relationship, IOC, network, timeline) lengkap dengan MITRE data component tiap field.
+- Per-alert AHP score with technique/level filters.
+- Click an alert for the per-category breakdown (identity, behavioral, relationship, IOC, network, timeline) with the MITRE data component for each field.
 
 ## API Endpoints
 
@@ -209,23 +211,23 @@ pytest -q          # 43 tests: AHP, normalizer, correlation, scoring, case scori
 | GET | `/api/alerts/{id}` | Alert detail + full scoring breakdown |
 | GET | `/api/cases` | List cases + case-level score (`?technique=&level=`) |
 | GET | `/api/cases/{case_id}` | Case detail: per-fact evidence (Q, E, carriers) + required coverage |
-| GET | `/api/timeline/{id}` | Timeline (nodes + typed edges), dari expansion bila tersedia |
+| GET | `/api/timeline/{id}` | Timeline (nodes + typed edges), expansion-based when available |
 | POST | `/api/webhook` | Wazuh integration: alert → bounded expansion → case score |
 | GET | `/api/stats` | Aggregate statistics |
 | GET | `/docs` | Swagger UI |
 
-## Artefak untuk paper
+## Paper artifacts
 
-| File | Isi | Dipakai untuk |
+| File | Contents | Used for |
 |---|---|---|
-| `backend/weights.json` | Bobot AHP final (per kategori & field) | single source of truth |
-| `backend/AHP_RESULTS.md` | Semua matriks pairwise, λmax, CI, CR, global weights | lampiran + methodology |
+| `backend/weights.json` | Final AHP weights (per category and field) | single source of truth |
+| `backend/AHP_RESULTS.md` | All pairwise matrices, λmax, CI, CR, global weights | appendix + methodology |
 | `backend/data/mitre_traceability.csv` | `technique → field → role → weight → Wazuh path → OSSEM → MITRE component` | content validity |
-| `backend/field_metadata.py` | Sumber mapping field | reproducibility |
-| `backend/technique_profiles.py` | Expected fields per teknik + kutipan data source | methodology |
-| `evaluation/` | Runbook ART, script orkestrator, template `runs.csv` | bab evaluasi |
+| `backend/field_metadata.py` | Field mapping source | reproducibility |
+| `backend/technique_profiles.py` | Expected fields per technique with data-source citations | methodology |
+| `evaluation/` | ART runbook, orchestrator script, `runs.csv` template | evaluation chapter |
 
-## Struktur project
+## Project structure
 
 ```
 actionability-scoring-dashboard/
@@ -257,57 +259,57 @@ actionability-scoring-dashboard/
 │           ├── ScoringDashboard.jsx / AlertDetail.jsx / StatsOverview.jsx
 │           └── ui.jsx             # design primitives
 ├── evaluation/
-│   ├── ART_RUNBOOK.md         # prosedur manual ART
-│   ├── runs.csv               # template log run
+│   ├── ART_RUNBOOK.md         # manual ART procedure
+│   ├── runs.csv               # run log template
 │   └── windows/
-│       ├── Invoke-ArtPlan.ps1 # orkestrator ART (Pilot/Unattended)
-│       └── STEP-BY-STEP.md    # panduan operator
+│       ├── Invoke-ArtPlan.ps1 # ART orchestrator (Pilot/Unattended)
+│       └── STEP-BY-STEP.md    # operator guide
 ├── docs/
 │   ├── banner.svg
 │   └── screenshots/
-├── nginx/                     # reverse proxy untuk docker-compose
+├── nginx/                     # reverse proxy for docker-compose
 └── docker-compose.yml
 ```
 
 ## Limitations
 
-- Lab terbatas: 1 Windows endpoint, 3 teknik (T1059.001, T1059.003, T1105), Sysmon EID 1/3/5.
-- Sysmon EID 22 (DNS) praktis tidak aktif → pivot DNS tidak dipakai; registry/file/pipe pivot belum tersedia.
-- SHA-256 pivot live memakai exact `term` pada field `hashes`; data lab berisi satu hash SHA256 per field. Kalau konfigurasi Sysmon mengirim beberapa algoritma dalam satu string, perlu ingest normalization atau query fallback.
-- EID 5 (Process Termination) **tidak** dipakai untuk scoring (bukan data component ATT&CK untuk 3 teknik ini) — hanya untuk correlation/lifetime.
-- Archives retention terbatas; Process Create milik proses yang sudah berjalan sebelum archive window hilang → lineage bisa terputus.
-- `originalFileName` dan `signatureStatus` tidak punya atribut OSSEM CDM (tercatat di traceability CSV).
-- Role `required`/`supporting`/`context` adalah klasifikasi operasional penelitian, bukan label wajib resmi MITRE.
-- Threshold Low/Medium/High masih provisional sampai kalibrasi di fase evaluasi.
-- Skor mengukur **kelengkapan bukti**, bukan tingkat kebahayaan; adversary yang mengisi field bisa menaikkan skor.
-- API prototype belum memiliki authentication; jalankan hanya di trusted lab network/Tailscale, jangan expose ke public internet.
+- Single-host lab with three techniques (T1059.001, T1059.003, T1105) and Sysmon EID 1/3/5 only.
+- Sysmon EID 22 (DNS) is effectively absent, so the DNS pivot is unused; registry, file, and pipe pivots are also unavailable.
+- The live SHA-256 pivot uses an exact `term` on `hashes`; the lab stores a single SHA256 per field. If Sysmon is configured to emit multiple algorithms in one string, ingest normalization or a fallback query is required.
+- EID 5 (Process Termination) is **not** part of scoring (not an ATT&CK data component for these techniques) — it is used for correlation/lifetime only.
+- Archive retention is limited; Process Create records for processes started before the archive window are missing, which can break lineage.
+- `originalFileName` and `signatureStatus` have no OSSEM CDM attribute (noted in the traceability CSV).
+- The `required` / `supporting` / `context` roles are a study-defined operational classification, not official MITRE labels.
+- Low/Medium/High thresholds are provisional until calibrated in the evaluation phase.
+- The score measures **evidence completeness**, not maliciousness; an adversary who populates fields can raise it.
+- The API has no authentication yet; run it only on a trusted lab network or Tailscale, never on the public internet.
 
 ## Status & roadmap
 
-| Fase | Status |
+| Phase | Status |
 |---|---|
-| Normalizer + typed-edge correlation engine | selesai |
-| AHP weights + technique profiles + traceability artifacts | selesai |
-| Alert-level + case-level scoring | selesai |
-| Dashboard (Cases/Alerts/Case detail) + MOCK/LIVE switch | selesai |
-| Seed policy critical-only + unrestricted case evidence | selesai |
-| Runbook + script ART untuk data berlabel | selesai |
-| Fase evaluasi: sensitivity A/B, ablation korelasi, discrimination, kalibrasi threshold, weight perturbation | berjalan |
-| Penulisan paper (Bab 4/5) | menyusul |
+| Normalizer + typed-edge correlation engine | done |
+| AHP weights + technique profiles + traceability artifacts | done |
+| Alert-level + case-level scoring | done |
+| Dashboard (Cases/Alerts/Case detail) + MOCK/LIVE switch | done |
+| Critical-only seed policy + unrestricted case evidence | done |
+| ART runbook + orchestrator for labeled data | done |
+| Evaluation: sensitivity A/B, correlation ablation, discrimination, threshold calibration, weight perturbation | in progress |
+| Paper writing (results and discussion) | upcoming |
 
 ## Troubleshooting
 
-| Masalah | Solusi |
+| Problem | Fix |
 |---|---|
-| Backend tidak start (port 8000 terpakai) | Ubah port di `main.py` (`uvicorn.run(app, port=8001)`) |
-| Frontend tidak bisa akses API | Pastikan backend jalan; cek `VITE_API_TARGET` / `vite.config.js` |
-| `npm install` gagal | Coba `npm install --legacy-peer-deps` |
-| Live mode kosong / error | Cek `last_error` di `/api/health`; pastikan `.env` benar dan Indexer reachable |
-| Dashboard live kosong padahal ada alert | Turunkan `SEED_MIN_LEVEL` (lab ini maksimum level 12) |
-| Halaman blank | Cek console browser (F12) |
+| Backend will not start (port 8000 in use) | Change the port in `main.py` (`uvicorn.run(app, port=8001)`) |
+| Frontend cannot reach the API | Make sure the backend is running; check `VITE_API_TARGET` / `vite.config.js` |
+| `npm install` fails | Try `npm install --legacy-peer-deps` |
+| Live mode empty or erroring | Check `last_error` in `/api/health`; verify `.env` and Indexer connectivity |
+| Live dashboard empty although alerts exist | Lower `SEED_MIN_LEVEL` (this lab currently peaks at level 12) |
+| Blank page | Check the browser console (F12) |
 
 ## Authors
 
 Jason Tanuwidjaja · Johan Davin Hermawan · Kevin Diaz Pramono — Computer Science, Bina Nusantara University.
 
-Skripsi: *Context-Aware Telemetry Observability Evaluation Agent for MITRE ATT&CK-Aligned Wazuh Events*.
+Thesis: *Context-Aware Telemetry Observability Evaluation Agent for MITRE ATT&CK-Aligned Wazuh Events*.
