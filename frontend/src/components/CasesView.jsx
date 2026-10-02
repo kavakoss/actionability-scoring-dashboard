@@ -1,12 +1,20 @@
 import { useEffect, useState } from 'react'
 import { fetchCases } from '../api'
-import { EmptyState, LevelBadge, Meter, Panel, SectionTitle, SkeletonRows, TechniqueTag, levelTone, shortId } from './ui'
+import { EmptyState, Meter, Panel, SectionTitle, SkeletonRows, TechniqueTag, levelTone, shortId } from './ui'
 
 const TECH_LABELS = {
   'T1059.001': 'PowerShell',
   'T1059.003': 'CMD',
   'T1105': 'Ingress Transfer',
 }
+
+const BAND_TEXT = {
+  High: 'text-band-high',
+  Medium: 'text-band-medium',
+  Low: 'text-band-low',
+}
+
+const bandText = (level) => BAND_TEXT[level] || 'text-ink'
 
 function formatTime(value) {
   if (!value) return '-'
@@ -39,11 +47,12 @@ export default function CasesView({ onSelect }) {
     <Panel>
       <SectionTitle
         right={
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <select
+              aria-label="Filter cases by technique"
               value={filters.technique}
               onChange={update('technique')}
-              className="rounded border border-edge bg-raised px-2 py-1 text-xs text-ink outline-none focus:border-accent"
+              className="rounded-lg border border-edge bg-panel px-3 py-2 text-sm text-ink outline-none focus:border-accent"
             >
               <option value="">All techniques</option>
               <option value="T1059.001">T1059.001 PowerShell</option>
@@ -51,16 +60,17 @@ export default function CasesView({ onSelect }) {
               <option value="T1105">T1105 Ingress Transfer</option>
             </select>
             <select
+              aria-label="Filter cases by actionability"
               value={filters.level}
               onChange={update('level')}
-              className="rounded border border-edge bg-raised px-2 py-1 text-xs text-ink outline-none focus:border-accent"
+              className="rounded-lg border border-edge bg-panel px-3 py-2 text-sm text-ink outline-none focus:border-accent"
             >
               <option value="">All levels</option>
               <option value="High">High</option>
               <option value="Medium">Medium</option>
               <option value="Low">Low</option>
             </select>
-            <span className="w-16 text-right text-2xs text-ink-faint">
+            <span className="min-w-16 text-right text-xs text-ink-muted">
               {cases ? `${cases.length} cases` : 'loading…'}
             </span>
           </div>
@@ -79,43 +89,55 @@ export default function CasesView({ onSelect }) {
         <div className="overflow-x-auto">
           <table className="w-full text-left">
             <thead>
-              <tr className="border-b border-edge text-2xs uppercase tracking-wider text-ink-faint">
-                <th className="px-4 py-2 font-medium">Seed</th>
-                <th className="px-4 py-2 font-medium">Host</th>
-                <th className="px-4 py-2 font-medium">Technique</th>
-                <th className="px-4 py-2 font-medium">Time</th>
-                <th className="px-4 py-2 font-medium">Case score</th>
-                <th className="px-4 py-2 font-medium">Level</th>
-                <th className="px-4 py-2 font-medium">Required</th>
-                <th className="px-4 py-2 font-medium">Events</th>
+              <tr className="border-b border-edge bg-raised/60 text-xs text-ink-muted">
+                <th className="px-5 py-3 font-semibold">Seed alert</th>
+                <th className="px-4 py-3 font-semibold">Endpoint</th>
+                <th className="px-4 py-3 font-semibold">ATT&CK technique</th>
+                <th className="px-4 py-3 font-semibold">Observed</th>
+                <th className="px-4 py-3 font-semibold">Case actionability</th>
+                <th className="px-4 py-3 font-semibold">Wazuh level</th>
+                <th className="px-4 py-3 font-semibold">Evidence coverage</th>
+                <th className="px-4 py-3 font-semibold">Telemetry</th>
               </tr>
             </thead>
             <tbody>
               {cases.map((item) => (
                 <tr key={item.case_id} className="row-link cursor-pointer" onClick={() => onSelect(item.case_id)}>
-                  <td className="px-4 py-2.5">
-                    <div className="text-xs text-ink">{item.seed?.rule?.description || 'Seed alert'}</div>
-                    <div className="font-mono text-2xs text-ink-faint">{shortId(item.case_id, 26)}</div>
+                  <td className="max-w-[320px] px-5 py-3">
+                    <div className="truncate text-sm font-medium text-ink" title={item.seed?.rule?.description || 'Seed alert'}>
+                      {item.seed?.rule?.description || 'Seed alert'}
+                    </div>
+                    <div className="mt-1 font-mono text-xs text-ink-faint">{shortId(item.case_id, 26)}</div>
                   </td>
-                  <td className="px-4 py-2.5 text-xs text-ink-muted">{item.seed?.agent || '-'}</td>
-                  <td className="px-4 py-2.5">
+                  <td className="whitespace-nowrap px-4 py-3 text-sm font-medium text-ink-muted">
+                    {item.seed?.agent || '-'}
+                  </td>
+                  <td className="px-4 py-3">
                     <TechniqueTag technique={item.technique} label={TECH_LABELS[item.technique] || item.technique} />
                   </td>
-                  <td className="tabular px-4 py-2.5 text-xs text-ink-muted">{formatTime(item.seed?.timestamp)}</td>
-                  <td className="px-4 py-2.5">
+                  <td className="tabular whitespace-nowrap px-4 py-3 text-sm text-ink-muted">{formatTime(item.seed?.timestamp)}</td>
+                  <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
-                      <span className="tabular w-10 text-sm font-semibold text-ink">{item.case_score}</span>
-                      <Meter value={item.case_score} tone={levelTone(item.level)} className="w-24" />
+                      <span className={`tabular whitespace-nowrap text-sm font-semibold ${bandText(item.level)}`}>
+                        {item.case_score}/100
+                      </span>
+                      <Meter value={item.case_score} tone={levelTone(item.level)} className="w-16" />
                     </div>
                   </td>
-                  <td className="px-4 py-2.5">
-                    <LevelBadge level={item.level} />
+                  <td className="px-4 py-3">
+                    <span className="rounded-md border border-edge bg-raised px-2 py-1 text-xs font-medium text-ink-muted">
+                      L{item.seed?.rule?.level ?? '-'}
+                    </span>
                   </td>
-                  <td className="tabular px-4 py-2.5 text-xs text-ink-muted">
-                    {(item.required_coverage * 100).toFixed(0)}%
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-2">
+                      <Meter value={item.required_coverage * 100} tone="bg-accent" className="w-16" />
+                      <span className="tabular text-sm text-ink-muted">{(item.required_coverage * 100).toFixed(0)}%</span>
+                    </div>
                   </td>
-                  <td className="tabular px-4 py-2.5 text-xs text-ink-muted">
-                    {item.nodes}n / {item.edges}e
+                  <td className="whitespace-nowrap px-4 py-3 text-sm text-ink-muted">
+                    {item.nodes} {item.nodes === 1 ? 'event' : 'events'} · {item.edges}{' '}
+                    {item.edges === 1 ? 'relation' : 'relations'}
                   </td>
                 </tr>
               ))}

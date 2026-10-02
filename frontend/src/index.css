@@ -9,11 +9,21 @@ body,
 }
 
 body {
-  background: #0b0f14;
-  color: #e5e7eb;
+  background: #0e1218;
+  color: #e9edf3;
   font-family: Inter, ui-sans-serif, system-ui, 'Segoe UI', Roboto, sans-serif;
-  font-size: 13px;
+  font-size: 14px;
   -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: rgba(91, 157, 255, 0.45);
+  color: #ffffff;
+}
+
+*:focus-visible {
+  outline: 2px solid rgba(91, 157, 255, 0.65);
+  outline-offset: 2px;
 }
 
 ::-webkit-scrollbar {
@@ -22,17 +32,17 @@ body {
 }
 
 ::-webkit-scrollbar-track {
-  background: #0b0f14;
+  background: #0e1218;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #26303d;
-  border: 2px solid #0b0f14;
-  border-radius: 6px;
+  background: #333d4a;
+  border: 2px solid #0e1218;
+  border-radius: 8px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #334155;
+  background: #46525f;
 }
 
 .tabular {
@@ -44,10 +54,15 @@ body {
 }
 
 .row-link {
-  border-bottom: 1px solid rgba(31, 41, 55, 0.7);
+  border-bottom: 1px solid #222a34;
   transition: background-color 0.15s ease;
 }
 
 .row-link:hover {
-  background: #141b24;
+  background: #1a212b;
+}
+
+select option {
+  background: #1d242e;
+  color: #e9edf3;
 }

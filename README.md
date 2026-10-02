@@ -133,6 +133,9 @@ An EID 1 alert has no destination IP and an EID 3 alert has no command line, so 
 ## Seed policy (live)
 
 - Only alerts with `rule.level >= SEED_MIN_LEVEL` (default 15; configurable via env or API) become **seeds/cases**. Non-critical alerts are not displayed.
+- Live seed candidates pass a narrow known-benign allowlist for the confirmed Chrome security-extension CMD launch and scheduled Intel SUR task. The exact recurring `PcaSvc`/`sdbinst.exe -m -bg` signature is excluded if the seed threshold is lowered to include its built-in rule level. The health endpoint reports raw candidate, exclusion, display-cap, and query-cap counts; Wazuh's stored history is never changed.
+- `LIVE_HOURS_BACK` defines the displayed study window; the header shows this window and the number of known-benign alerts excluded. Use a new post-rule-change test window for reported evaluation results, and retain raw Wazuh exports as source evidence.
+- For the thesis demo, use `SEED_MIN_LEVEL=15` for critical-only seeds and set `LIVE_HOURS_BACK` to cover the ART run recorded in `evaluation/runs.csv`; restart/rebuild the backend after changing `.env`. The header makes the active threshold and time window visible.
 - **Supporting evidence is unrestricted**: opening a seed triggers a bounded expansion across `wazuh-alerts-*` **and** `wazuh-archives-*` — same process, parent/child, hash, destination, user — so context can come from any event.
 - Change the threshold in `.env`, or call `POST /api/source {"source": "live", "seed_min_level": 12}`.
 - The level filter applies to live mode only; mock mode always loads the full fixture set.
@@ -204,7 +207,7 @@ pytest -q          # 43 tests: AHP, normalizer, correlation, scoring, case scori
 
 | Method | Endpoint | Description |
 |---|---|---|
-| GET | `/api/health` | Health check + current source + `seed_min_level` |
+| GET | `/api/health` | Health/source + study window, raw candidate count, known-benign exclusions, and truncation status |
 | GET | `/api/source` | Current source, availability, config |
 | POST | `/api/source` | Switch source: `{"source": "mock" \| "live", "seed_min_level": 12}` |
 | GET | `/api/alerts` | List seed alerts (`?technique=&level=&agent=&sort_by=score`) |

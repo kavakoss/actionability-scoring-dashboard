@@ -1,4 +1,4 @@
-import { EmptyState, LevelBadge, Meter, Panel, SectionTitle, TechniqueTag, levelTone } from './ui'
+import { Badge, EmptyState, LevelBadge, Meter, Panel, SectionTitle, TechniqueTag, levelTone } from './ui'
 
 const TECH_LABELS = {
   'T1059.001': 'PowerShell',
@@ -10,6 +10,7 @@ function formatTime(value) {
   if (!value) return '-'
   try {
     return new Date(value).toLocaleString(undefined, {
+      year: 'numeric',
       month: 'short',
       day: '2-digit',
       hour: '2-digit',
@@ -26,11 +27,12 @@ export default function ScoringDashboard({ alerts, filters, onFilter, onSelect }
     <Panel>
       <SectionTitle
         right={
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <select
+              aria-label="Filter alerts by technique"
               value={filters.technique || ''}
               onChange={(event) => onFilter('technique', event.target.value)}
-              className="rounded border border-edge bg-raised px-2 py-1 text-xs text-ink outline-none focus:border-accent"
+              className="rounded-lg border border-edge bg-panel px-3 py-2 text-sm text-ink outline-none focus:border-accent"
             >
               <option value="">All techniques</option>
               <option value="T1059.001">T1059.001 PowerShell</option>
@@ -38,9 +40,10 @@ export default function ScoringDashboard({ alerts, filters, onFilter, onSelect }
               <option value="T1105">T1105 Ingress Transfer</option>
             </select>
             <select
+              aria-label="Filter alerts by actionability"
               value={filters.level || ''}
               onChange={(event) => onFilter('level', event.target.value)}
-              className="rounded border border-edge bg-raised px-2 py-1 text-xs text-ink outline-none focus:border-accent"
+              className="rounded-lg border border-edge bg-panel px-3 py-2 text-sm text-ink outline-none focus:border-accent"
             >
               <option value="">All levels</option>
               <option value="High">High</option>
@@ -50,7 +53,7 @@ export default function ScoringDashboard({ alerts, filters, onFilter, onSelect }
           </div>
         }
       >
-        Alerts
+        Alert actionability
       </SectionTitle>
 
       {alerts.length === 0 && <EmptyState title="No alerts match the filters" />}
@@ -59,13 +62,13 @@ export default function ScoringDashboard({ alerts, filters, onFilter, onSelect }
         <div className="overflow-x-auto">
           <table className="w-full text-left">
             <thead>
-              <tr className="border-b border-edge text-2xs uppercase tracking-wider text-ink-faint">
-                <th className="px-4 py-2 font-medium">Time</th>
-                <th className="px-4 py-2 font-medium">Host</th>
-                <th className="px-4 py-2 font-medium">Technique</th>
-                <th className="px-4 py-2 font-medium">Rule</th>
-                <th className="px-4 py-2 font-medium">Alert score</th>
-                <th className="px-4 py-2 font-medium">Level</th>
+              <tr className="border-b border-edge bg-raised/60 text-xs text-ink-muted">
+                <th className="whitespace-nowrap px-5 py-3 font-semibold">Observed</th>
+                <th className="px-4 py-3 font-semibold">Endpoint</th>
+                <th className="px-4 py-3 font-semibold">ATT&CK technique</th>
+                <th className="px-4 py-3 font-semibold">Detection rule</th>
+                <th className="px-4 py-3 font-semibold">Actionability</th>
+                <th className="px-4 py-3 font-semibold">Wazuh rule level</th>
               </tr>
             </thead>
             <tbody>
@@ -74,25 +77,28 @@ export default function ScoringDashboard({ alerts, filters, onFilter, onSelect }
                 const mitre = alert.mitre || {}
                 return (
                   <tr key={alert.id} className="row-link cursor-pointer" onClick={() => onSelect(alert.id)}>
-                    <td className="tabular px-4 py-2.5 font-mono text-2xs text-ink-muted">{formatTime(alert.timestamp)}</td>
-                    <td className="px-4 py-2.5 text-xs text-ink">{alert.agent}</td>
-                    <td className="px-4 py-2.5">
+                    <td className="tabular whitespace-nowrap px-5 py-3 text-xs text-ink-muted">{formatTime(alert.timestamp)}</td>
+                    <td className="px-4 py-3 text-sm font-medium text-ink">{alert.agent}</td>
+                    <td className="px-4 py-3">
                       <TechniqueTag
                         technique={mitre.technique}
                         label={TECH_LABELS[mitre.technique] || mitre.technique || 'Unknown'}
                       />
                     </td>
-                    <td className="max-w-[280px] truncate px-4 py-2.5 text-xs text-ink-muted">
+                    <td className="max-w-[320px] truncate px-4 py-3 text-sm text-ink-muted" title={alert.rule?.description || ''}>
                       {alert.rule?.description || '-'}
                     </td>
-                    <td className="px-4 py-2.5">
+                    <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
-                        <span className="tabular w-10 text-sm font-semibold text-ink">{scoring.total_score}</span>
-                        <Meter value={scoring.percentage || 0} tone={levelTone(scoring.level)} className="w-24" />
+                        <span className="tabular whitespace-nowrap text-sm font-semibold text-ink">
+                          {scoring.total_score}/100
+                        </span>
+                        <Meter value={scoring.percentage || 0} tone={levelTone(scoring.level)} className="w-16" />
+                        <LevelBadge level={scoring.level} />
                       </div>
                     </td>
-                    <td className="px-4 py-2.5">
-                      <LevelBadge level={scoring.level} />
+                    <td className="px-4 py-3">
+                      <Badge className="border-edge bg-raised text-ink-muted">L{alert.rule?.level ?? '-'}</Badge>
                     </td>
                   </tr>
                 )

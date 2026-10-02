@@ -4,25 +4,32 @@ export default {
   theme: {
     extend: {
       colors: {
-        base: '#0B0F14',
-        panel: '#11161D',
-        raised: '#161C24',
-        edge: '#1F2937',
+        base: '#0E1218',
+        panel: '#161C24',
+        raised: '#1D242E',
+        edge: '#2A323E',
         ink: {
-          DEFAULT: '#E5E7EB',
-          muted: '#9AA7B8',
-          faint: '#7C8A9C',
+          DEFAULT: '#E9EDF3',
+          muted: '#A9B4C2',
+          faint: '#7E8A99',
         },
-        accent: '#3B82F6',
+        accent: '#5B9DFF',
+        // Severity semantics for detection rules (high = most severe).
         sev: {
-          low: '#22C55E',
-          medium: '#F59E0B',
-          high: '#EF4444',
+          low: '#3ECF8E',
+          medium: '#F0B429',
+          high: '#F26D6D',
+        },
+        // Actionability semantics: high = most complete evidence.
+        band: {
+          high: '#3ECF8E',
+          medium: '#F0B429',
+          low: '#E07070',
         },
         tech: {
-          pwsh: '#8B5CF6',
-          cmd: '#06B6D4',
-          transfer: '#F43F5E',
+          pwsh: '#A78BFA',
+          cmd: '#38BDF8',
+          transfer: '#FB7185',
         },
       },
       fontFamily: {
@@ -30,7 +37,7 @@ export default {
         mono: ['"JetBrains Mono"', 'ui-monospace', 'SFMono-Regular', 'Menlo', 'Consolas', 'monospace'],
       },
       fontSize: {
-        '2xs': ['11px', '14px'],
+        '2xs': ['12px', '16px'],
       },
     },
   },

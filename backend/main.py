@@ -25,6 +25,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from scoring import score_alerts
+from alert_quality import classify_known_benign, exclude_known_benign
 from correlation import (
     build_correlation_graph,
     build_timeline_from_case,
@@ -40,6 +41,7 @@ logger = logging.getLogger("actionability")
 DEFAULT_SOURCE = "live" if os.getenv("USE_LIVE_WAZUH", "false").lower() == "true" else "mock"
 LIVE_HOURS_BACK = int(os.getenv("LIVE_HOURS_BACK", "48"))
 LIVE_ALERT_LIMIT = int(os.getenv("LIVE_ALERT_LIMIT", "100"))
+LIVE_ALERT_FETCH_LIMIT = int(os.getenv("LIVE_ALERT_FETCH_LIMIT", "5000"))
 # Only alerts at/above this rule level become seeds (cases). Supporting
 # evidence is unrestricted: it is retrieved from alerts + archives whenever a
 # seed is expanded.
@@ -69,6 +71,13 @@ GRAPH = None
 CASES: dict = {}
 CASE_DATA: dict = {}
 LAST_ERROR: str | None = None
+LIVE_DATA_QUALITY = {
+    "raw_candidates_count": 0,
+    "excluded_known_benign_count": 0,
+    "excluded_by_reason": {},
+    "omitted_due_to_display_limit": 0,
+    "query_capped": False,
+}
 
 
 class SourceRequest(BaseModel):
@@ -113,14 +122,24 @@ def _load_mock() -> list:
 
 
 def _load_live() -> list:
+    global LIVE_DATA_QUALITY
     from wazuh_client import query_alerts
 
     raw_alerts = query_alerts(
         min_level=SEED_MIN_LEVEL,
         hours_back=LIVE_HOURS_BACK,
-        size=LIVE_ALERT_LIMIT,
+        size=LIVE_ALERT_FETCH_LIMIT,
     )
-    return score_alerts([_prepare_live_alert(item) for item in raw_alerts])
+    eligible_alerts, excluded_by_reason = exclude_known_benign(raw_alerts)
+    selected_alerts = eligible_alerts[:LIVE_ALERT_LIMIT]
+    LIVE_DATA_QUALITY = {
+        "raw_candidates_count": len(raw_alerts),
+        "excluded_known_benign_count": sum(excluded_by_reason.values()),
+        "excluded_by_reason": excluded_by_reason,
+        "omitted_due_to_display_limit": max(0, len(eligible_alerts) - len(selected_alerts)),
+        "query_capped": len(raw_alerts) >= LIVE_ALERT_FETCH_LIMIT,
+    }
+    return score_alerts([_prepare_live_alert(item) for item in selected_alerts])
 
 
 def _rebuild_graph():
@@ -203,10 +222,12 @@ def health() -> dict:
         "available_sources": ["mock", "live"],
         "alerts_count": len(SCORED_ALERTS),
         "cases_count": len(CASES),
+        "data_quality": dict(LIVE_DATA_QUALITY),
         "last_error": LAST_ERROR,
         "config": {
             "live_hours_back": LIVE_HOURS_BACK,
             "live_alert_limit": LIVE_ALERT_LIMIT,
+            "live_alert_fetch_limit": LIVE_ALERT_FETCH_LIMIT,
             "seed_min_level": SEED_MIN_LEVEL,
         },
     }
@@ -214,14 +235,24 @@ def health() -> dict:
 
 def load_source(source: str, seed_min_level: int | None = None) -> dict:
     """Load a data source into the in-memory store (alerts, graph, cases)."""
-    global SOURCE, SCORED_ALERTS, LAST_ERROR, SEED_MIN_LEVEL
+    global SOURCE, SCORED_ALERTS, LAST_ERROR, SEED_MIN_LEVEL, LIVE_DATA_QUALITY
     if source not in ("mock", "live"):
         raise ValueError(f"unknown source '{source}'")
 
     if seed_min_level is not None:
         SEED_MIN_LEVEL = max(0, min(15, int(seed_min_level)))
 
-    alerts = _load_live() if source == "live" else _load_mock()
+    if source == "live":
+        alerts = _load_live()
+    else:
+        alerts = _load_mock()
+        LIVE_DATA_QUALITY = {
+            "raw_candidates_count": len(alerts),
+            "excluded_known_benign_count": 0,
+            "excluded_by_reason": {},
+            "omitted_due_to_display_limit": 0,
+            "query_capped": False,
+        }
 
     SOURCE = source
     SCORED_ALERTS = alerts
@@ -260,6 +291,7 @@ def set_source(request: SourceRequest):
 @app.post("/api/webhook")
 async def wazuh_webhook(request: Request):
     """Receive an alert from the Wazuh Manager integration."""
+    global LIVE_DATA_QUALITY
     if SOURCE != "live":
         return {
             "status": "mock_mode",
@@ -270,6 +302,22 @@ async def wazuh_webhook(request: Request):
 
     alert = await request.json()
     alert.setdefault("_id", normalize_alert(alert)["id"])
+
+    benign_reason = classify_known_benign(alert)
+    if benign_reason:
+        exclusions = dict(LIVE_DATA_QUALITY.get("excluded_by_reason") or {})
+        exclusions[benign_reason] = exclusions.get(benign_reason, 0) + 1
+        LIVE_DATA_QUALITY = {
+            **LIVE_DATA_QUALITY,
+            "raw_candidates_count": LIVE_DATA_QUALITY.get("raw_candidates_count", 0) + 1,
+            "excluded_known_benign_count": LIVE_DATA_QUALITY.get("excluded_known_benign_count", 0) + 1,
+            "excluded_by_reason": exclusions,
+        }
+        return {
+            "status": "excluded_known_benign",
+            "reason": benign_reason,
+            "message": "Raw Wazuh history is unchanged; this event was not added as a dashboard seed.",
+        }
 
     rule_level = int((alert.get("rule") or {}).get("level") or 0)
     if rule_level and rule_level < SEED_MIN_LEVEL:

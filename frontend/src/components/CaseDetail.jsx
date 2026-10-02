@@ -192,44 +192,54 @@ export default function CaseDetail({ caseId, onBack, onOpenAlert }) {
             Evidence aggregation reached its per-fact sample cap; additional carrier provenance is summarized, not individually listed.
           </div>
         )}
-        <div className="flex flex-wrap items-start justify-between gap-4 p-4">
-          <div className="min-w-0">
-            <div className="flex items-center gap-3">
+        <div className="flex flex-col gap-5 p-5 lg:flex-row lg:items-start lg:justify-between">
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-3">
               <TechniqueTag technique={data.technique} label={`${data.technique} · ${techniqueLabel}`} />
               <span className="text-2xs text-ink-faint">{data.profile_name}</span>
             </div>
             <h1 className="mt-2 truncate text-base font-semibold text-ink">
               {summary.seed?.rule?.description || 'Correlated case'}
             </h1>
-            <dl className="mt-3 grid grid-cols-2 gap-x-8 gap-y-3 md:grid-cols-4">
+            <dl className="mt-4 grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-3 xl:grid-cols-5">
               <KeyValue label="Case ID" mono>
-                {shortId(data.case_id, 28)}
+                <span className="block max-w-[230px] truncate" title={data.case_id}>
+                  {shortId(data.case_id, 28)}
+                </span>
               </KeyValue>
               <KeyValue label="Host">{summary.seed?.agent || '-'}</KeyValue>
+              <KeyValue label="Wazuh rule level">L{summary.seed?.rule?.level ?? '-'}</KeyValue>
               <KeyValue label="Seed time" mono>
-                {formatTime(summary.seed?.timestamp)}
+                <span className="whitespace-nowrap">{formatTime(summary.seed?.timestamp)}</span>
               </KeyValue>
               <KeyValue label="Events">
                 {data.nodes} nodes · {data.edges} edges
               </KeyValue>
             </dl>
           </div>
-          <div className="text-right">
-            <div className="tabular text-4xl font-semibold text-ink">{data.case_score}</div>
-            <div className="mt-1 flex items-center justify-end gap-2">
-              <LevelBadge level={data.level} />
-              <span className="text-2xs text-ink-faint">case actionability</span>
+          <div className="shrink-0 rounded-xl border border-edge bg-raised/60 p-4 lg:w-[290px]">
+            <p className="text-xs font-medium text-ink-muted">Case actionability</p>
+            <div className="tabular mt-1 text-4xl font-semibold tracking-tight text-ink">
+              {data.case_score}
+              <span className="ml-1 text-lg font-medium text-ink-faint">/100</span>
             </div>
-            <div className="mt-3 flex items-center justify-end gap-2">
+            <div className="mt-2 flex items-center gap-2">
+              <LevelBadge level={data.level} />
+              <span className="text-xs text-ink-muted">AHP band</span>
+            </div>
+            <p className="mt-3 text-xs leading-5 text-ink-muted">
+              AHP score from expected evidence across correlated events; separate from Wazuh severity.
+            </p>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
               <button
                 onClick={() => downloadReport(`case-${safeFilename(data.case_id)}.md`, buildReport(detail, timeline))}
-                className="rounded border border-edge px-2 py-1 text-2xs text-ink-muted hover:border-accent hover:text-accent"
+                className="rounded-lg border border-edge bg-panel px-3 py-2 text-xs font-medium text-ink-muted transition-colors hover:border-accent hover:text-accent"
               >
                 Export report
               </button>
               <button
                 onClick={() => onOpenAlert(data.case_id)}
-                className="rounded border border-edge px-2 py-1 text-2xs text-ink-muted hover:border-accent hover:text-accent"
+                className="rounded-lg border border-edge bg-panel px-3 py-2 text-xs font-medium text-ink-muted transition-colors hover:border-accent hover:text-accent"
               >
                 Open seed alert
               </button>
