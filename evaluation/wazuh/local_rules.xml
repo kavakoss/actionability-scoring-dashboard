@@ -1,0 +1,141 @@
+<!-- Local rules -->
+
+<!-- Modify it at your will. -->
+<!-- Copyright (C) 2015, Wazuh Inc. -->
+
+<!-- Example -->
+<group name="local,syslog,sshd,">
+
+  <!--
+  Dec 10 01:02:02 host sshd[1234]: Failed none for root from 1.1.1.1 port 1066 ssh2
+  -->
+  <rule id="100001" level="5">
+    <if_sid>5716</if_sid>
+    <srcip>1.1.1.1</srcip>
+    <description>sshd: authentication failed from IP 1.1.1.1.</description>
+    <group>authentication_failed,pci_dss_10.2.4,pci_dss_10.2.5,</group>
+  </rule>
+
+</group>
+
+<group name="windows,sysmon,attack,">
+
+    <!-- T1059.001 - PowerShell -->
+    <rule id="100100" level="15">
+        <if_group>sysmon_event1</if_group>
+        <field name="win.eventdata.image" type="pcre2">(?i)\\(powershell|pwsh)\.exe$</field>
+        <field name="win.eventdata.commandLine" type="pcre2">(?i)(?:\s-(?:e|enc|encodedcommand|c|command|file)\b|\b(?:Invoke-Expression|IEX|DownloadString|DownloadFile|Invoke-WebRequest|iwr|Invoke-RestMethod|Start-BitsTransfer|FromBase64String)\b)</field>
+
+        <description>
+            MITRE T1059.001 - PowerShell execution detected:
+            $(win.eventdata.commandLine)
+        </description>
+
+        <mitre>
+            <id>T1059.001</id>
+        </mitre>
+    </rule>
+
+    <!-- T1059.003 - Windows Command Shell -->
+    <rule id="100101" level="15">
+        <if_group>sysmon_event1</if_group>
+        <field name="win.eventdata.image" type="pcre2">(?i)\\cmd\.exe$</field>
+        <field name="win.eventdata.commandLine" type="pcre2">(?i)(?:/(?:c|r|k)\s+(?:echo|whoami|cmd\b|\x3c)|\.(?:bat|cmd|vbs)\b|(?:cmd\s*\x3c|\x3c\s*\S+\.(?:cmd|bat)))</field>
+
+        <description>
+            MITRE T1059.003 - Windows Command Shell execution detected:
+            $(win.eventdata.commandLine)
+        </description>
+
+        <mitre>
+            <id>T1059.003</id>
+        </mitre>
+    </rule>
+
+
+    <!-- Intel SUR runs this scheduled batch through WScript; avoid a false critical. -->
+    <rule id="100105" level="0">
+        <if_sid>100101</if_sid>
+        <field name="win.eventdata.parentCommandLine" type="pcre2">(?i)Intel.*SUR.*QUEENCREEK.*task\.vbs</field>
+        <description>Ignore the scheduled Intel SUR maintenance task.</description>
+    </rule>
+
+    <!-- Exact recurring PcaSvc background compatibility-database check; keep other sdbinst alerts. -->
+    <rule id="100106" level="0">
+        <if_sid>92058</if_sid>
+        <field name="win.eventdata.image" type="pcre2">(?i)Windows.*System32.*sdbinst\.exe$</field>
+        <field name="win.eventdata.commandLine" type="pcre2">(?i)\\sdbinst\.exe\s+-m\s+-bg\s*$</field>
+        <field name="win.eventdata.parentCommandLine" type="pcre2">(?i)\\svchost\.exe\s+-k\s+LocalSystemNetworkRestricted\s+-p\s+-s\s+PcaSvc\s*$</field>
+        <description>Ignore the routine PcaSvc background compatibility-database check.</description>
+    </rule>
+
+    <!-- Benign local noise; keep genuine ART behaviour detectable. -->
+    <rule id="100107" level="0">
+        <if_sid>100100</if_sid>
+        <field name="win.eventdata.parentImage" type="pcre2">(?i)ossec-agent.*wazuh-agent\.exe$</field>
+        <description>Ignore the Wazuh agent own PowerShell health checks.</description>
+    </rule>
+
+    <rule id="100108" level="0">
+        <if_sid>100101</if_sid>
+        <field name="win.eventdata.commandLine" type="pcre2">(?i)hpatchmonTask\.cmd</field>
+        <description>Ignore the Windows hpatchmon scheduled task.</description>
+    </rule>
+
+    <rule id="100109" level="0">
+        <if_sid>100101</if_sid>
+        <field name="win.eventdata.parentImage" type="pcre2">(?i)chrome\.exe$</field>
+        <field name="win.eventdata.commandLine" type="pcre2">(?i)(chrome-extension://|eset|total security)</field>
+        <description>Ignore browser-launched security-extension helpers.</description>
+    </rule>
+
+    <!-- T1105 - Ingress Tool Transfer via PowerShell -->
+    <rule id="100102" level="15">
+        <if_group>sysmon_event1</if_group>
+        <field name="win.eventdata.commandLine" type="pcre2">(?i)(Invoke-WebRequest|iwr\s+|Invoke-RestMethod|irm\s+|Net\.WebClient|DownloadString|DownloadFile|Start-BitsTransfer)</field>
+
+        <description>
+            MITRE T1105 - Possible Ingress Tool Transfer:
+            $(win.eventdata.commandLine)
+        </description>
+
+        <mitre>
+            <id>T1105</id>
+        </mitre>
+    </rule>
+
+    <!-- T1105 - certutil / curl / wget / bitsadmin -->
+    <rule id="100103" level="15">
+        <if_group>sysmon_event1</if_group>
+        <field name="win.eventdata.image" type="pcre2">(?i)\\(certutil|certreq|curl|wget|bitsadmin|MpCmdRun|OneDriveStandaloneUpdater)\.exe$</field>
+        <field name="win.eventdata.commandLine" type="pcre2">(?i)(?:-urlcache\b|-verifyctl\b|-post\b|/transfer\b|-downloadfile\b|(?:^|\s)--output\b|(?:^|\s)-o(?:\s|$)|(?:^|\s)-O(?:\s|$)|https?://|UpdateOfficeConfig)</field>
+
+        <description>
+            MITRE T1105 - Possible Ingress Tool Transfer using
+            $(win.eventdata.image):
+            $(win.eventdata.commandLine)
+        </description>
+
+        <mitre>
+            <id>T1105</id>
+        </mitre>
+    </rule>
+
+    <!-- T1105 - sysmon event 3 -->
+    <rule id="100104" level="15">
+        <if_group>sysmon_event3</if_group>
+
+        <field name="win.eventdata.image" type="pcre2">(?i)\\(powershell|pwsh|curl|wget|certutil|certreq|bitsadmin|MpCmdRun|OneDriveStandaloneUpdater)\.exe$</field>
+
+        <description>
+            MITRE T1105 - Network connection from potential file-transfer process:
+            $(win.eventdata.image) ->
+            $(win.eventdata.destinationIp):$(win.eventdata.destinationPort)
+        </description>
+
+        <mitre>
+            <id>T1105</id>
+        </mitre>
+    </rule>
+
+</group>
