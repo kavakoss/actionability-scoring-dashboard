@@ -34,6 +34,10 @@ export default function App() {
   const [sourceError, setSourceError] = useState(null)
   const [refreshKey, setRefreshKey] = useState(0)
   const dataQuality = health?.data_quality || {}
+  const liveWindow =
+    health?.config?.live_from && health?.config?.live_to
+      ? `${health.config.live_from} → ${health.config.live_to}`
+      : `Last ${health?.config?.live_hours_back ?? 48} hours`
 
   useEffect(() => {
     const params = new URLSearchParams()
@@ -135,7 +139,7 @@ export default function App() {
               <div
                 className="hidden min-w-0 max-w-[470px] text-right xl:block"
                 title={health.source === 'live'
-                  ? `Wazuh rule.level >= ${health.config?.seed_min_level}. Raw candidates returned: ${dataQuality.raw_candidates_count ?? 0}. Known-benign exclusions: ${Object.entries(dataQuality.excluded_by_reason || {}).map(([reason, count]) => `${reason}: ${count}`).join('; ') || 'none'}. Omitted by display limit: ${dataQuality.omitted_due_to_display_limit ?? 0}. Raw Wazuh documents are unchanged.`
+                  ? `Window: ${liveWindow}. Wazuh rule.level >= ${health.config?.seed_min_level}. Raw candidates returned: ${dataQuality.raw_candidates_count ?? 0}. Known-benign exclusions: ${Object.entries(dataQuality.excluded_by_reason || {}).map(([reason, count]) => `${reason}: ${count}`).join('; ') || 'none'}. Omitted by display limit: ${dataQuality.omitted_due_to_display_limit ?? 0}. Raw Wazuh documents are unchanged.`
                   : 'Deterministic mock fixtures; not live Wazuh data.'}
               >
                 <div className="flex items-center justify-end gap-2">
@@ -144,7 +148,7 @@ export default function App() {
                   </span>
                   <span className="truncate text-xs font-medium text-ink">
                     {health.source === 'live'
-                      ? `Last ${health.config?.live_hours_back} hours · Wazuh level ≥ ${health.config?.seed_min_level}`
+                      ? `${liveWindow} · Wazuh level ≥ ${health.config?.seed_min_level}`
                       : 'Deterministic example data'}
                   </span>
                 </div>

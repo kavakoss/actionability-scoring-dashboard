@@ -225,8 +225,14 @@ def query_alerts(
     min_level: int | None = None,
     hours_back: int = 24,
     size: int = 100,
+    time_from: str | None = None,
+    time_to: str | None = None,
 ) -> list:
-    """Fetch alerts from Wazuh Indexer with optional filters."""
+    """Fetch alerts from Wazuh Indexer with optional filters.
+
+    Time window: a fixed ``[time_from, time_to]`` range when both are given
+    (reproducible evaluation windows), otherwise a rolling ``now-hours_back``.
+    """
     must = []
     filters = []
 
@@ -237,7 +243,10 @@ def query_alerts(
     if min_level:
         filters.append({"range": {"rule.level": {"gte": min_level}}})
 
-    filters.append({"range": {"@timestamp": {"gte": f"now-{hours_back}h"}}})
+    if time_from and time_to:
+        filters.append({"range": {"@timestamp": {"gte": time_from, "lte": time_to}}})
+    else:
+        filters.append({"range": {"@timestamp": {"gte": f"now-{hours_back}h"}}})
 
     body = {
         "query": {"bool": {"must": must, "filter": filters}},

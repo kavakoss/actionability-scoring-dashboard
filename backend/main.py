@@ -40,6 +40,10 @@ logger = logging.getLogger("actionability")
 
 DEFAULT_SOURCE = "live" if os.getenv("USE_LIVE_WAZUH", "false").lower() == "true" else "mock"
 LIVE_HOURS_BACK = int(os.getenv("LIVE_HOURS_BACK", "48"))
+# Optional fixed window (ISO-8601 UTC). When both are set they override the
+# rolling hours-back window, so an evaluation window is reproducible.
+LIVE_FROM = os.getenv("LIVE_FROM") or None
+LIVE_TO = os.getenv("LIVE_TO") or None
 LIVE_ALERT_LIMIT = int(os.getenv("LIVE_ALERT_LIMIT", "100"))
 LIVE_ALERT_FETCH_LIMIT = int(os.getenv("LIVE_ALERT_FETCH_LIMIT", "5000"))
 # Only alerts at/above this rule level become seeds (cases). Supporting
@@ -83,6 +87,8 @@ LIVE_DATA_QUALITY = {
 class SourceRequest(BaseModel):
     source: str
     seed_min_level: int | None = None
+    live_from: str | None = None
+    live_to: str | None = None
 
 
 def _prepare_live_alert(raw: dict) -> dict:
@@ -129,6 +135,8 @@ def _load_live() -> list:
         min_level=SEED_MIN_LEVEL,
         hours_back=LIVE_HOURS_BACK,
         size=LIVE_ALERT_FETCH_LIMIT,
+        time_from=LIVE_FROM,
+        time_to=LIVE_TO,
     )
     eligible_alerts, excluded_by_reason = exclude_known_benign(raw_alerts)
     selected_alerts = eligible_alerts[:LIVE_ALERT_LIMIT]
@@ -138,6 +146,8 @@ def _load_live() -> list:
         "excluded_by_reason": excluded_by_reason,
         "omitted_due_to_display_limit": max(0, len(eligible_alerts) - len(selected_alerts)),
         "query_capped": len(raw_alerts) >= LIVE_ALERT_FETCH_LIMIT,
+        "window_from": LIVE_FROM,
+        "window_to": LIVE_TO,
     }
     return score_alerts([_prepare_live_alert(item) for item in selected_alerts])
 
@@ -226,6 +236,8 @@ def health() -> dict:
         "last_error": LAST_ERROR,
         "config": {
             "live_hours_back": LIVE_HOURS_BACK,
+            "live_from": LIVE_FROM,
+            "live_to": LIVE_TO,
             "live_alert_limit": LIVE_ALERT_LIMIT,
             "live_alert_fetch_limit": LIVE_ALERT_FETCH_LIMIT,
             "seed_min_level": SEED_MIN_LEVEL,
@@ -233,14 +245,24 @@ def health() -> dict:
     }
 
 
-def load_source(source: str, seed_min_level: int | None = None) -> dict:
+def load_source(
+    source: str,
+    seed_min_level: int | None = None,
+    live_from: str | None = None,
+    live_to: str | None = None,
+) -> dict:
     """Load a data source into the in-memory store (alerts, graph, cases)."""
     global SOURCE, SCORED_ALERTS, LAST_ERROR, SEED_MIN_LEVEL, LIVE_DATA_QUALITY
+    global LIVE_FROM, LIVE_TO
     if source not in ("mock", "live"):
         raise ValueError(f"unknown source '{source}'")
 
     if seed_min_level is not None:
         SEED_MIN_LEVEL = max(0, min(15, int(seed_min_level)))
+    if live_from is not None:
+        LIVE_FROM = live_from or None
+    if live_to is not None:
+        LIVE_TO = live_to or None
 
     if source == "live":
         alerts = _load_live()
@@ -252,6 +274,8 @@ def load_source(source: str, seed_min_level: int | None = None) -> dict:
             "excluded_by_reason": {},
             "omitted_due_to_display_limit": 0,
             "query_capped": False,
+            "window_from": LIVE_FROM,
+            "window_to": LIVE_TO,
         }
 
     SOURCE = source
@@ -280,7 +304,12 @@ def get_source():
 def set_source(request: SourceRequest):
     global LAST_ERROR
     try:
-        return load_source(request.source, request.seed_min_level)
+        return load_source(
+            request.source,
+            request.seed_min_level,
+            request.live_from,
+            request.live_to,
+        )
     except Exception as exc:  # noqa: BLE001
         LAST_ERROR = f"{request.source}: {exc}"
         logger.exception("failed to switch data source to %s", request.source)

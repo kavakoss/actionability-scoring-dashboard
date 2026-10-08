@@ -44,4 +44,6 @@ def test_live_loader_filters_before_display_limit_and_reports_quality(monkeypatc
         "excluded_by_reason": {"Chrome security extension launching CMD": 1},
         "omitted_due_to_display_limit": 0,
         "query_capped": False,
+        "window_from": None,
+        "window_to": None,
     }
