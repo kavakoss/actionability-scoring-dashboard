@@ -28,9 +28,8 @@
 | T1105-7 | B | 3 | 3 | 0 | 90.2 |
 | T1105-7 | A-B delta |  |  |  | 1.8 |
 
-Expected: Condition B (EID 3 OFF) scores lower because destination IP/port are missing.
-Caveat: if 'runs with EID3 case' is fewer than Condition A runs, EID3 capture was
-inconsistent and the A/B contrast is weak — rerun with verified capture.
+Reported as a limitation: EID3 was captured in only 1 of 3 Condition-A runs,
+so the A/B contrast is inconclusive. See `sensitivity_limitation.md`.
 
 ### Seed-alert level (diagnostic, not the thesis metric)
 
@@ -46,5 +45,8 @@ inconsistent and the A/B contrast is weak — rerun with verified capture.
 - Detection here reflects this ruleset (evaluation/wazuh/local_rules.xml v1).
   Rules were tuned after observing these runs — disclose this bias.
 - Legacy pilot runs before the 9-variation plan are excluded.
+- Failed/SKIPPED runs are detailed with causes in `failed_runs.md`.
+- The T1105 #7 A/B sensitivity test is reported as a limitation; see
+  `sensitivity_limitation.md` (EID3 capture was inconsistent).
 - Seed-level mean mixes EID1 alerts (no network fields) with EID3 alerts (no command line),
   which is why the case-level view is the correct unit for the sensitivity test.
