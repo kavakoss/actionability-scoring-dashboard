@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { fetchCaseDetail, fetchTimeline } from '../api'
 import TimelineView from './TimelineView'
+import ProcessTree from './ProcessTree'
 import {
   Dot,
   EmptyState,
@@ -322,8 +323,21 @@ export default function CaseDetail({ caseId, onBack, onOpenAlert }) {
           </Panel>
 
           <Panel>
-            <SectionTitle right={<span className="text-2xs text-ink-faint">{timeline.nodes?.length || 0} events</span>}>
-              Case timeline
+            <SectionTitle
+              right={
+                <span className="text-2xs text-ink-faint">
+                  {timeline.nodes?.length || 0} events · {timeline.edges?.length || 0} relations
+                </span>
+              }
+            >
+              Process creation tree
+            </SectionTitle>
+            <ProcessTree nodes={timeline.nodes} seedId={caseId} />
+          </Panel>
+
+          <Panel>
+            <SectionTitle right={<span className="text-2xs text-ink-faint">chronological</span>}>
+              Event order
             </SectionTitle>
             <TimelineView nodes={timeline.nodes} edges={timeline.edges} seedId={caseId} />
           </Panel>

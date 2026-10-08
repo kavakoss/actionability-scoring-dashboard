@@ -430,6 +430,38 @@ def _summary(norm: dict) -> str:
     )
 
 
+def _is_system_session(norm: dict) -> bool:
+    """Session-0 / service account heuristic (system vs user process)."""
+    user = (norm["user"]["name"] or "").upper()
+    if not user:
+        return False
+    system_markers = ("SYSTEM", "LOCAL SERVICE", "NETWORK SERVICE", "FONT DRIVER")
+    return any(marker in user for marker in system_markers)
+
+
+def _timeline_node(norm: dict) -> dict:
+    """One timeline/process-tree node with lineage and session metadata."""
+    process = norm["process"]
+    return {
+        "id": norm["id"],
+        "timestamp": norm["timestamp"] or "",
+        "agent": norm["host"]["name"],
+        "mitre": norm["mitre"] or {},
+        "rule": norm["rule"] or {},
+        "scoring": norm["scoring"] or {},
+        "event_id": norm["event"]["id"],
+        "user": norm["user"]["name"],
+        "process": process["name"],
+        "executable": process["executable"],
+        "command_line": process["command_line"],
+        "process_guid": process["guid"],
+        "parent_process": process["parent"]["name"],
+        "parent_process_guid": process["parent"]["guid"],
+        "is_system": _is_system_session(norm),
+        "summary": _summary(norm),
+    }
+
+
 def bfs_timeline(graph: nx.Graph, seed_id: str, max_depth: int = 3) -> list:
     """Bounded BFS: weak edges provide context but are never traversed."""
     if seed_id not in graph:
@@ -473,18 +505,7 @@ def build_timeline_from_case(nodes: list, edges: list) -> dict:
     """
     timeline_nodes = []
     for norm in nodes:
-        timeline_nodes.append({
-            "id": norm["id"],
-            "timestamp": norm["timestamp"] or "",
-            "agent": norm["host"]["name"],
-            "mitre": norm["mitre"] or {},
-            "rule": norm["rule"] or {},
-            "scoring": norm["scoring"] or {},
-            "event_id": norm["event"]["id"],
-            "user": norm["user"]["name"],
-            "process": norm["process"]["name"],
-            "summary": _summary(norm),
-        })
+        timeline_nodes.append(_timeline_node(norm))
     timeline_nodes.sort(key=lambda item: item["timestamp"])
 
     compact_edges = []
@@ -542,20 +563,7 @@ def build_timeline_with_edges(graph: nx.Graph, seed_id: str, max_depth: int = 3)
 
     nodes = []
     for node_id in node_ids:
-        norm = graph.nodes[node_id]["norm"]
-        nodes.append({
-            "id": node_id,
-            "timestamp": norm["timestamp"] or "",
-            "agent": norm["host"]["name"],
-            "mitre": norm["mitre"] or {},
-            "rule": norm["rule"] or {},
-            "scoring": norm["scoring"] or {},
-            "event_id": norm["event"]["id"],
-            "user": norm["user"]["name"],
-            "process": norm["process"]["name"],
-            "summary": _summary(norm),
-        })
-
+        nodes.append(_timeline_node(graph.nodes[node_id]["norm"]))
     nodes.sort(key=lambda item: item["timestamp"])
     return {"nodes": nodes, "edges": list(edges.values())}
 
