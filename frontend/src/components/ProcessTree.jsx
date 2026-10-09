@@ -1,159 +1,119 @@
 import { useMemo } from 'react'
-import { shortId } from './ui'
+import { Badge, EmptyState, formatTime } from './ui'
+import { buildProcessTree, EVENT_LABELS } from './processTreeModel.mjs'
 
-const EVENT_LABEL = {
-  1: 'Process Create',
-  3: 'Network Connect',
-  5: 'Process Terminate',
-  11: 'File Create',
-  22: 'DNS Query',
-  12: 'Registry Create',
-  13: 'Registry Set',
-}
+const baseName = (path) => path?.split(/[\\/]/).pop()
+const sessionLabel = (node) =>
+  node.is_system
+    ? 'System session'
+    : node.is_system === false || node.user
+      ? 'User session'
+      : 'Session unknown'
 
-function formatTime(value) {
-  if (!value) return '-'
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return value
-  return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}:${String(
-    date.getSeconds(),
-  ).padStart(2, '0')}`
-}
-
-function baseName(path) {
-  if (!path) return null
-  return path.replace('/', '\\').split('\\').pop()
-}
-
-function buildTree(nodes, seedId) {
-  const groups = new Map()
-  for (const node of nodes) {
-    const key = node.process_guid || node.id
-    if (!groups.has(key)) groups.set(key, [])
-    groups.get(key).push(node)
-  }
-
-  const reps = new Map()
-  for (const [key, items] of groups) {
-    const create = items.find((node) => String(node.event_id) === '1')
-    reps.set(key, create || items[0])
-  }
-
-  const keys = new Set(groups.keys())
-  const children = new Map()
-  const roots = []
-  for (const [key, rep] of reps) {
-    const parentKey = rep.parent_process_guid
-    if (parentKey && keys.has(parentKey) && parentKey !== key) {
-      if (!children.has(parentKey)) children.set(parentKey, [])
-      children.get(parentKey).push(key)
-    } else {
-      roots.push(key)
-    }
-  }
-
-  const order = (key) => reps.get(key)?.timestamp || ''
-  for (const list of children.values()) list.sort((a, b) => order(a).localeCompare(order(b)))
-  roots.sort((a, b) => order(a).localeCompare(order(b)))
-
-  let seedKey = null
-  for (const [key, items] of groups) {
-    if (items.some((node) => node.id === seedId)) seedKey = key
-  }
-
-  return { groups, reps, children, roots, seedKey }
-}
-
-function TreeRow({ procKey, tree, seedId, depth, isLast, ancestorsLast }) {
-  const { groups, reps, children, seedKey } = tree
-  const items = groups.get(procKey) || []
-  const rep = reps.get(procKey)
-  const isSeed = procKey === seedKey
-  const kids = children.get(procKey) || []
-  const session = rep?.is_system ? 'System' : 'User'
-  const createNode = items.find((node) => String(node.event_id) === '1')
-  const commandLine = rep?.command_line || createNode?.summary || rep?.summary
-  const eventIds = [...new Set(items.map((node) => String(node.event_id)))].sort()
+function ProcessBranch({ procKey, tree, seedId }) {
+  const rep = tree.reps.get(procKey)
+  const items = tree.groups.get(procKey)
+  const children = tree.children.get(procKey) || []
+  const isSeed = tree.seedKey === procKey
   const missingParent =
-    depth === 0 && rep?.parent_process_guid && !tree.groups.has(rep.parent_process_guid)
-      ? rep.parent_process || 'unknown'
-      : null
-
+    rep.parent_process_guid && !tree.groups.has(rep.parent_process_guid)
+  const command = rep.command_line || rep.summary
   return (
-    <li className="relative">
-      {depth > 0 && (
-        <span
-          className="absolute left-0 top-0 h-6 w-4 rounded-bl border-b border-l border-edge"
-          style={{ left: `${(depth - 1) * 20}px` }}
-          aria-hidden="true"
-        />
-      )}
-      <div className="relative" style={{ paddingLeft: `${depth * 20}px` }}>
-        <div
-          className={`flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border px-3 py-2 ${
-            isSeed ? 'border-accent/50 bg-accent/5' : 'border-edge bg-raised/40'
-          }`}
-        >
-          <span className={`font-medium ${isSeed ? 'text-accent' : 'text-ink'}`}>
-            {rep?.process || baseName(rep?.executable) || 'process'}
+    <li>
+      <div className={`tree-node ${isSeed ? 'tree-node-seed' : ''}`}>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          <span className="break-all font-mono text-small font-medium">
+            {rep.process || baseName(rep.executable) || 'Unknown process'}
           </span>
           {isSeed && (
-            <span className="rounded border border-accent/50 px-1.5 py-0.5 text-xs font-medium text-accent">
-              SEED
-            </span>
+            <Badge className="border-accent/50 text-accent">SEED</Badge>
           )}
-          <span
-            className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-              rep?.is_system ? 'bg-raised text-ink-muted' : 'bg-band-high/10 text-band-high'
-            }`}
-          >
-            {session}
+          <span className="text-caption text-ink-muted">
+            {sessionLabel(rep)}
           </span>
-          <span className="tabular font-mono text-xs text-ink-faint">{formatTime(rep?.timestamp)}</span>
-          {eventIds.map((eventId) => (
-            <span
-              key={eventId}
-              className="rounded border border-edge px-1.5 py-0.5 font-mono text-xs text-ink-muted"
-            >
-              EID {eventId} · {EVENT_LABEL[eventId] || 'Event'}
-            </span>
-          ))}
-          {missingParent && (
-            <span
-              className="rounded border border-sev-medium/40 bg-sev-medium/5 px-1.5 py-0.5 text-xs text-sev-medium"
-              title="The parent process was not captured in this case (depth/telemetry limit)."
-            >
-              ↑ parent: {missingParent} (not captured)
-            </span>
-          )}
+          <time
+            className="ml-auto text-caption text-ink-faint"
+            dateTime={rep.timestamp}
+          >
+            {formatTime(rep.timestamp)}
+          </time>
         </div>
-        <div className="mt-1 space-y-0.5 pl-3">
-          {rep?.user && <p className="text-xs text-ink-faint">{rep.user}</p>}
-          {commandLine && (
-            <p className="truncate font-mono text-xs text-ink-muted" title={commandLine}>
-              {commandLine}
-            </p>
-          )}
-          {items.length > 1 && (
-            <p className="text-xs text-ink-faint">
-              {items.length} events · {items.map((node) => node.id).slice(0, 3).map((id) => shortId(id, 8)).join(', ')}
-              {items.length > 3 ? ' …' : ''}
-            </p>
-          )}
-        </div>
+        {rep.user && (
+          <p className="mt-1 break-all text-caption text-ink-faint">
+            {rep.user}
+          </p>
+        )}
+        {command && (
+          <p
+            className="mt-2 truncate font-mono text-caption text-ink-muted"
+            title={command}
+          >
+            {command}
+          </p>
+        )}
+        {missingParent && (
+          <p className="mt-2 text-caption text-ink-muted">
+            ↑ Uncaptured parent
+            {rep.parent_process ? `: ${rep.parent_process}` : ''}{' '}
+            <span className="text-ink-faint">
+              · outside the captured evidence
+            </span>
+          </p>
+        )}
+        {tree.lineageWarnings.has(procKey) && (
+          <p className="mt-2 text-caption text-ink-muted">
+            Conflicting parent reference; displayed as a root.
+          </p>
+        )}
+        <details className="mt-2 text-caption">
+          <summary className="w-fit cursor-pointer text-ink-muted hover:text-ink">
+            {items.length} {items.length === 1 ? 'event' : 'events'} · Process
+            details
+          </summary>
+          <div className="mt-3 space-y-3 border-l border-edge-strong pl-3">
+            {rep.process_guid && (
+              <p className="mono-value">
+                <span className="font-sans text-ink-faint">Process GUID </span>
+                {rep.process_guid}
+              </p>
+            )}
+            {rep.executable && <p className="mono-value">{rep.executable}</p>}
+            {command && (
+              <p className="mono-value whitespace-pre-wrap">{command}</p>
+            )}
+            <ol className="divide-y divide-edge">
+              {items.map((node) => (
+                <li key={node.id} className="py-2">
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                    <time className="text-ink-faint" dateTime={node.timestamp}>
+                      {formatTime(node.timestamp)}
+                    </time>
+                    <span>
+                      EID {node.event_id ?? '—'} ·{' '}
+                      {EVENT_LABELS[node.event_id] || 'Event'}
+                    </span>
+                    {node.id === seedId && (
+                      <span className="font-medium text-accent">SEED</span>
+                    )}
+                  </div>
+                  {node.summary && (
+                    <p className="mono-value mt-1">{node.summary}</p>
+                  )}
+                  <p className="mono-value mt-1 text-ink-faint">{node.id}</p>
+                </li>
+              ))}
+            </ol>
+          </div>
+        </details>
       </div>
-
-      {kids.length > 0 && (
-        <ul className="relative mt-1 space-y-1">
-          {kids.map((kid) => (
-            <TreeRow
-              key={kid}
-              procKey={kid}
+      {children.length > 0 && (
+        <ul className="tree-branches">
+          {children.map((key) => (
+            <ProcessBranch
+              key={key}
+              procKey={key}
               tree={tree}
               seedId={seedId}
-              depth={depth + 1}
-              isLast={false}
-              ancestorsLast={ancestorsLast}
             />
           ))}
         </ul>
@@ -163,33 +123,49 @@ function TreeRow({ procKey, tree, seedId, depth, isLast, ancestorsLast }) {
 }
 
 export default function ProcessTree({ nodes = [], seedId }) {
-  const tree = useMemo(() => buildTree(nodes, seedId), [nodes, seedId])
-
-  if (nodes.length === 0) {
-    return <p className="px-5 py-6 text-sm text-ink-faint">No process events for this case.</p>
-  }
-
-  const systemCount = [...tree.groups.keys()].filter((key) => tree.reps.get(key)?.is_system).length
-  const userCount = tree.groups.size - systemCount
-
+  const tree = useMemo(() => buildProcessTree(nodes, seedId), [nodes, seedId])
+  if (!nodes.length)
+    return (
+      <EmptyState
+        title="No process events"
+        hint="There are no captured process events for this case."
+      />
+    )
+  const reps = [...tree.reps.values()]
+  const systemCount = reps.filter((node) => node.is_system).length
+  const userCount = reps.filter(
+    (node) => !node.is_system && (node.is_system === false || node.user),
+  ).length
   return (
     <div className="p-5">
-      <div className="mb-3 flex flex-wrap items-center gap-3 text-xs text-ink-muted">
-        <span className="font-medium text-ink">{tree.groups.size} processes</span>
-        <span className="rounded-full bg-raised px-2 py-0.5">{systemCount} system</span>
-        <span className="rounded-full bg-band-high/10 px-2 py-0.5 text-band-high">{userCount} user</span>
-        <span className="text-ink-faint">Indented by parent → child; root = highest ancestor captured</span>
+      <div className="mb-4 flex flex-wrap items-center gap-x-5 gap-y-2 text-caption text-ink-muted">
+        <strong className="font-medium text-ink">
+          {tree.groups.size} process groups
+        </strong>
+        <span>
+          {systemCount} System · {userCount} User
+        </span>
+        <span className="text-ink-faint">
+          Parent → child · Roots are the highest captured ancestors
+        </span>
       </div>
-
-      {tree.roots.length === 0 && (
-        <p className="text-sm text-ink-faint">No process lineage could be reconstructed.</p>
-      )}
-
-      <ul className="space-y-1">
-        {tree.roots.map((rootKey) => (
-          <TreeRow key={rootKey} procKey={rootKey} tree={tree} seedId={seedId} depth={0} isLast={false} />
-        ))}
-      </ul>
+      <div
+        className="max-h-[680px] overflow-auto pr-2"
+        tabIndex={0}
+        role="region"
+        aria-label="Process hierarchy"
+      >
+        <ul className="min-w-[560px] space-y-2">
+          {tree.roots.map((key) => (
+            <ProcessBranch
+              key={key}
+              procKey={key}
+              tree={tree}
+              seedId={seedId}
+            />
+          ))}
+        </ul>
+      </div>
     </div>
   )
 }
