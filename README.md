@@ -1,5 +1,9 @@
 # Actionability Scoring
 
+> **UI review branch:** See [the updated dashboard preview](docs/UI-REVIEW.md)
+> for screenshots and local review instructions. This branch contains the proposed
+> UI refresh; it has not been merged into `main`.
+
 <p align="center">
   <img src="docs/banner.svg" alt="Actionability Scoring — Wazuh/Sysmon telemetry quality" width="100%">
 </p>

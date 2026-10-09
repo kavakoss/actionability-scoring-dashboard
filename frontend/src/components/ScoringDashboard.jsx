@@ -1,112 +1,125 @@
-import { Badge, EmptyState, LevelBadge, Meter, Panel, SectionTitle, TechniqueTag, levelTone } from './ui'
+import {
+  EmptyState,
+  Filters,
+  Panel,
+  ScoreCell,
+  SectionTitle,
+  SkeletonRows,
+  TECH_LABELS,
+  TechniqueTag,
+  WazuhBadge,
+  formatTime,
+} from './ui'
 
-const TECH_LABELS = {
-  'T1059.001': 'PowerShell',
-  'T1059.003': 'CMD',
-  'T1105': 'Ingress Transfer',
-}
-
-function formatTime(value) {
-  if (!value) return '-'
-  try {
-    return new Date(value).toLocaleString(undefined, {
-      year: 'numeric',
-      month: 'short',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-    })
-  } catch {
-    return value
-  }
-}
-
-export default function ScoringDashboard({ alerts, filters, onFilter, onSelect }) {
+export default function ScoringDashboard({
+  alerts,
+  filters,
+  onFilter,
+  onSelect,
+  error,
+}) {
   return (
     <Panel>
       <SectionTitle
-        right={
-          <div className="flex flex-wrap items-center gap-2">
-            <select
-              aria-label="Filter alerts by technique"
-              value={filters.technique || ''}
-              onChange={(event) => onFilter('technique', event.target.value)}
-              className="rounded-lg border border-edge bg-panel px-3 py-2 text-sm text-ink outline-none focus:border-accent"
-            >
-              <option value="">All techniques</option>
-              <option value="T1059.001">T1059.001 PowerShell</option>
-              <option value="T1059.003">T1059.003 CMD</option>
-              <option value="T1105">T1105 Ingress Transfer</option>
-            </select>
-            <select
-              aria-label="Filter alerts by actionability"
-              value={filters.level || ''}
-              onChange={(event) => onFilter('level', event.target.value)}
-              className="rounded-lg border border-edge bg-panel px-3 py-2 text-sm text-ink outline-none focus:border-accent"
-            >
-              <option value="">All levels</option>
-              <option value="High">High</option>
-              <option value="Medium">Medium</option>
-              <option value="Low">Low</option>
-            </select>
-          </div>
-        }
+        right={<Filters kind="alerts" filters={filters} onChange={onFilter} />}
       >
-        Alert actionability
+        Scored alerts{' '}
+        <span className="ml-2 text-small font-normal text-ink-faint">
+          {alerts?.length ?? '—'}
+        </span>
       </SectionTitle>
-
-      {alerts.length === 0 && <EmptyState title="No alerts match the filters" />}
-
-      {alerts.length > 0 && (
-        <div className="overflow-x-auto">
-          <table className="w-full text-left">
+      {error ? (
+        <EmptyState title="Alerts unavailable" hint={error} />
+      ) : alerts === null ? (
+        <SkeletonRows />
+      ) : !alerts.length ? (
+        <EmptyState
+          title="No alerts match these filters"
+          hint="Choose another technique or actionability band."
+        />
+      ) : (
+        <div className="table-scroll">
+          <table
+            className="data-table min-w-[960px]"
+            aria-label="Scored alerts"
+          >
+            <colgroup>
+              {[14, 14, 16, 29, 18, 9].map((width, i) => (
+                <col key={i} style={{ width: `${width}%` }} />
+              ))}
+            </colgroup>
             <thead>
-              <tr className="border-b border-edge bg-raised/60 text-xs text-ink-muted">
-                <th className="whitespace-nowrap px-5 py-3 font-semibold">Observed</th>
-                <th className="px-4 py-3 font-semibold">Endpoint</th>
-                <th className="px-4 py-3 font-semibold">ATT&CK technique</th>
-                <th className="px-4 py-3 font-semibold">Detection rule</th>
-                <th className="px-4 py-3 font-semibold">Actionability</th>
-                <th className="px-4 py-3 font-semibold">Wazuh rule level</th>
+              <tr>
+                <th>Observed · UTC</th>
+                <th>Endpoint</th>
+                <th>ATT&amp;CK technique</th>
+                <th>Detection rule</th>
+                <th className="numeric">Actionability</th>
+                <th className="numeric">Wazuh level</th>
               </tr>
             </thead>
             <tbody>
-              {alerts.map((alert) => {
-                const scoring = alert.scoring || {}
-                const mitre = alert.mitre || {}
-                return (
-                  <tr key={alert.id} className="row-link cursor-pointer" onClick={() => onSelect(alert.id)}>
-                    <td className="tabular whitespace-nowrap px-5 py-3 text-xs text-ink-muted">{formatTime(alert.timestamp)}</td>
-                    <td className="px-4 py-3 text-sm font-medium text-ink">{alert.agent}</td>
-                    <td className="px-4 py-3">
-                      <TechniqueTag
-                        technique={mitre.technique}
-                        label={TECH_LABELS[mitre.technique] || mitre.technique || 'Unknown'}
-                      />
-                    </td>
-                    <td className="max-w-[320px] truncate px-4 py-3 text-sm text-ink-muted" title={alert.rule?.description || ''}>
-                      {alert.rule?.description || '-'}
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <span className="tabular whitespace-nowrap text-sm font-semibold text-ink">
-                          {scoring.total_score}/100
-                        </span>
-                        <Meter value={scoring.percentage || 0} tone={levelTone(scoring.level)} className="w-16" />
-                        <LevelBadge level={scoring.level} />
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <Badge className="border-edge bg-raised text-ink-muted">L{alert.rule?.level ?? '-'}</Badge>
-                    </td>
-                  </tr>
-                )
-              })}
+              {alerts.map((alert) => (
+                <tr
+                  key={alert.id}
+                  className="row-link cursor-pointer"
+                  onClick={() => onSelect(alert.id)}
+                >
+                  <td className="text-caption text-ink-muted">
+                    <time dateTime={alert.timestamp}>
+                      {formatTime(alert.timestamp)}
+                    </time>
+                  </td>
+                  <td className="text-ink-muted">
+                    <span className="block truncate" title={alert.agent}>
+                      {alert.agent}
+                    </span>
+                  </td>
+                  <td>
+                    <TechniqueTag
+                      technique={alert.mitre?.technique}
+                      label={
+                        TECH_LABELS[alert.mitre?.technique] ||
+                        alert.mitre?.technique
+                      }
+                    />
+                    <p className="mt-1 pl-3.5 font-mono text-caption text-ink-faint">
+                      {alert.mitre?.technique}
+                    </p>
+                  </td>
+                  <td>
+                    <button
+                      className="table-title"
+                      title={alert.rule?.description}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onSelect(alert.id)
+                      }}
+                    >
+                      {alert.rule?.description?.trim() || 'Wazuh alert'}
+                    </button>
+                    <span className="mt-1 block font-mono text-caption text-ink-faint">
+                      Rule {alert.rule?.id || '—'}
+                    </span>
+                  </td>
+                  <td>
+                    <ScoreCell
+                      score={alert.scoring?.total_score}
+                      level={alert.scoring?.level}
+                    />
+                  </td>
+                  <td className="numeric">
+                    <WazuhBadge level={alert.rule?.level} />
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
       )}
+      <p className="border-t border-edge px-5 py-3 text-caption text-ink-faint">
+        Select a detection rule to inspect its evidence fields.
+      </p>
     </Panel>
   )
 }
