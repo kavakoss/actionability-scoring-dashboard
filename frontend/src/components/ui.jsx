@@ -1,3 +1,5 @@
+import { useState } from 'react'
+
 export const TECH_LABELS = {
   'T1059.001': 'PowerShell',
   'T1059.003': 'Command Shell',
@@ -261,6 +263,69 @@ export function Filters({ kind, filters, onChange }) {
 }
 export function shortId(id, length = 14) {
   return !id ? '—' : id.length > length ? `${id.slice(0, length)}…` : id
+}
+async function writeClipboard(text) {
+  try {
+    if (navigator.clipboard?.writeText && window.isSecureContext) {
+      await navigator.clipboard.writeText(text)
+      return true
+    }
+  } catch {
+    /* fall through to the legacy path */
+  }
+  try {
+    const area = document.createElement('textarea')
+    area.value = text
+    area.setAttribute('readonly', '')
+    area.style.position = 'fixed'
+    area.style.opacity = '0'
+    document.body.appendChild(area)
+    area.select()
+    const ok = document.execCommand('copy')
+    document.body.removeChild(area)
+    return ok
+  } catch {
+    return false
+  }
+}
+export function CopyValue({ value, clamp = 0, className = '', block = false }) {
+  const [expanded, setExpanded] = useState(false)
+  const [state, setState] = useState('idle')
+  const text = value == null || value === '' ? '' : String(value)
+  if (!text) return <span className="text-ink-faint">—</span>
+  const isLong = clamp > 0 && text.length > clamp
+  const shown = !isLong || expanded ? text : `${text.slice(0, clamp)}…`
+  const copy = async () => {
+    const ok = await writeClipboard(text)
+    setState(ok ? 'copied' : 'failed')
+    setTimeout(() => setState('idle'), 1200)
+  }
+  return (
+    <span
+      className={`inline-flex min-w-0 items-start gap-1.5 ${block ? 'w-full' : 'max-w-full'} ${className}`}
+    >
+      <span className="min-w-0 break-all font-mono">{shown}</span>
+      {isLong && (
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          className="copy-chip"
+          aria-expanded={expanded}
+        >
+          {expanded ? 'less' : 'more'}
+        </button>
+      )}
+      <button
+        type="button"
+        onClick={copy}
+        className="copy-chip"
+        aria-label="Copy value to clipboard"
+        title="Copy value"
+      >
+        {state === 'copied' ? 'copied' : state === 'failed' ? 'failed' : 'copy'}
+      </button>
+    </span>
+  )
 }
 export function formatTime(value, timeOnly = false) {
   if (!value) return '—'

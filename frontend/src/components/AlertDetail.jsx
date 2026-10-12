@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { fetchAlertDetail } from '../api'
 import {
+  CopyValue,
   Dot,
   EmptyState,
   KeyValue,
@@ -90,7 +91,9 @@ export default function AlertDetail({ alertId, onBack, onOpenCase }) {
                 Full rule description and alert ID
               </summary>
               <p className="mono-value mt-3">{rule.description}</p>
-              <p className="mono-value mt-2">{alertId}</p>
+              <div className="mt-2">
+                <CopyValue value={alertId} block />
+              </div>
             </details>
             <dl className="mt-6 grid grid-cols-2 gap-x-6 gap-y-5 sm:grid-cols-3">
               <KeyValue label="Endpoint">{detail.agent?.name || '—'}</KeyValue>
@@ -186,9 +189,13 @@ export default function AlertDetail({ alertId, onBack, onOpenCase }) {
                         {field.expected ? field.role : 'Not expected'}
                       </span>
                     </div>
-                    <p className="mono-value max-h-32 overflow-auto">
-                      {field.present ? String(field.value) : '—'}
-                    </p>
+                    {field.present ? (
+                      <div className="max-h-40 overflow-auto">
+                        <CopyValue value={field.value} block />
+                      </div>
+                    ) : (
+                      <p className="mono-value">—</p>
+                    )}
                     <p className="mt-2 text-caption text-ink-faint">
                       {field.mitre_component}
                     </p>

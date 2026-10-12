@@ -1,4 +1,4 @@
-import { Dot, EmptyState } from './ui'
+import { CopyValue, Dot, EmptyState } from './ui'
 
 function FactRow({ fact }) {
   const carriers = fact.carriers || []
@@ -23,13 +23,7 @@ function FactRow({ fact }) {
           <>
             <div className="space-y-1">
               {values.slice(0, 2).map((value) => (
-                <p
-                  key={value}
-                  className="truncate font-mono text-caption text-ink-muted"
-                  title={value}
-                >
-                  {value}
-                </p>
+                <CopyValue key={value} value={value} clamp={140} block />
               ))}
             </div>
             <details className="mt-2 text-caption">
@@ -40,7 +34,7 @@ function FactRow({ fact }) {
               <div className="mt-3 max-h-60 space-y-3 overflow-auto border-l border-edge-strong pl-3">
                 {carriers.map((carrier, index) => (
                   <div key={`${carrier.event_id}-${index}`}>
-                    <p className="mono-value">{String(carrier.value)}</p>
+                    <CopyValue value={carrier.value} block />
                     <p className="mt-1 break-all font-mono text-caption text-ink-faint">
                       {carrier.source_index || 'Source unavailable'}#
                       {carrier.source_id || carrier.event_id}

@@ -115,6 +115,9 @@
   .mono-value {
     @apply break-all font-mono text-caption leading-5 text-ink-muted;
   }
+  .copy-chip {
+    @apply mt-0.5 shrink-0 rounded border border-edge bg-raised px-1.5 py-0.5 text-caption font-medium text-ink-faint transition-colors hover:border-edge-strong hover:text-ink;
+  }
   .presence {
     @apply inline-flex items-center gap-1.5 text-caption text-ink-muted;
   }

@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { Badge, EmptyState, formatTime } from './ui'
+import { Badge, CopyValue, EmptyState, formatTime } from './ui'
 import { buildProcessTree, EVENT_LABELS } from './processTreeModel.mjs'
 
 const baseName = (path) => path?.split(/[\\/]/).pop()
@@ -44,12 +44,9 @@ function ProcessBranch({ procKey, tree, seedId }) {
           </p>
         )}
         {command && (
-          <p
-            className="mt-2 truncate font-mono text-caption text-ink-muted"
-            title={command}
-          >
-            {command}
-          </p>
+          <div className="mt-2">
+            <CopyValue value={command} clamp={160} block />
+          </div>
         )}
         {missingParent && (
           <p className="mt-2 text-caption text-ink-muted">
@@ -74,12 +71,14 @@ function ProcessBranch({ procKey, tree, seedId }) {
             {rep.process_guid && (
               <p className="mono-value">
                 <span className="font-sans text-ink-faint">Process GUID </span>
-                {rep.process_guid}
+                <CopyValue value={rep.process_guid} />
               </p>
             )}
-            {rep.executable && <p className="mono-value">{rep.executable}</p>}
+            {rep.executable && <CopyValue value={rep.executable} block />}
             {command && (
-              <p className="mono-value whitespace-pre-wrap">{command}</p>
+              <div className="pt-1">
+                <CopyValue value={command} block />
+              </div>
             )}
             <ol className="divide-y divide-edge">
               {items.map((node) => (
@@ -97,9 +96,13 @@ function ProcessBranch({ procKey, tree, seedId }) {
                     )}
                   </div>
                   {node.summary && (
-                    <p className="mono-value mt-1">{node.summary}</p>
+                    <div className="mt-1">
+                      <CopyValue value={node.summary} block />
+                    </div>
                   )}
-                  <p className="mono-value mt-1 text-ink-faint">{node.id}</p>
+                  <div className="mt-1">
+                    <CopyValue value={node.id} block className="text-ink-faint" />
+                  </div>
                 </li>
               ))}
             </ol>

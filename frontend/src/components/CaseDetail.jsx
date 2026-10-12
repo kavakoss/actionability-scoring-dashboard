@@ -6,6 +6,7 @@ import EvidenceFacts from './EvidenceFacts'
 import { buildReport, downloadReport, safeFilename } from './caseReport'
 import {
   EmptyState,
+  CopyValue,
   KeyValue,
   Meter,
   Panel,
@@ -125,7 +126,9 @@ export default function CaseDetail({ caseId, onBack, onOpenAlert }) {
               <p className="mono-value mt-3">
                 {summary.seed?.rule?.description}
               </p>
-              <p className="mono-value mt-2">{data.case_id}</p>
+              <div className="mt-2">
+                <CopyValue value={data.case_id} block />
+              </div>
             </details>
             <dl className="mt-6 grid grid-cols-2 gap-x-6 gap-y-5 sm:grid-cols-3">
               <KeyValue label="Endpoint">{summary.seed?.agent || '—'}</KeyValue>
@@ -136,7 +139,7 @@ export default function CaseDetail({ caseId, onBack, onOpenAlert }) {
                 {formatTime(summary.seed?.timestamp)}
               </KeyValue>
               <KeyValue label="Case ID" mono>
-                <span title={data.case_id}>{shortId(data.case_id, 26)}</span>
+                <CopyValue value={data.case_id} clamp={30} />
               </KeyValue>
               <KeyValue label="Required evidence">
                 {data.required_covered} / {data.required_total} fields
