@@ -42,7 +42,7 @@ The answer is a **0–100 actionability score**, computed both **per alert** and
 ## Features
 
 - **Alert-level actionability score** — field weights are derived with **AHP (Saaty)** and validated through the Consistency Ratio (< 0.10); scoring only counts the fields expected for the alert's technique.
-- **Typed-edge correlation** — events are linked through typed, confidence-scored relationships (`SAME_PROCESS`, `PARENT_CHILD`, `SAME_BINARY`, `PROCESS_CONNECTED_TO`, `DESTINATION_SHARED`, …), not just matching fields.
+- **Typed-edge correlation** — events are linked through typed, confidence-scored relationships (`SAME_PROCESS`, `PARENT_CHILD`, `PROCESS_CONNECTED_TO`, `DESTINATION_SHARED`, …), not just matching fields.
 - **Case-level actionability score** — evidence across correlated events is aggregated and deduplicated, then weighted by quality `Q` and relationship confidence `E`.
 - **Bounded expansion** — the graph cannot explode: depth ≤ 3, node caps, context-leaf caps, and only identity-backed edges may recurse.
 - **Critical-only seeds** — only alerts with `rule.level >= SEED_MIN_LEVEL` become cases; supporting evidence is still retrieved from anywhere in the indexer.
@@ -129,7 +129,7 @@ An EID 1 alert has no destination IP and an EID 3 alert has no command line, so 
 ## Correlation model
 
 - **Pivot strengths**: `process.guid` 1.00, `parent.child.guid` 0.98, SHA-256 0.95, destination tuple 0.80, destination IP only 0.45, user 0.35.
-- **Typed relations**: `SAME_PROCESS`, `PARENT_CHILD`, `SAME_BINARY`, `PROCESS_CONNECTED_TO`, `PROCESS_QUERIED_DNS`, `PROCESS_CREATED_FILE`, `PROCESS_MODIFIED_REGISTRY`, `PROCESS_TERMINATED`, `DESTINATION_SHARED`, `SUPPORTING_CONTEXT`.
+- **Typed relations**: `SAME_PROCESS`, `PARENT_CHILD`, `PROCESS_CONNECTED_TO`, `PROCESS_QUERIED_DNS`, `PROCESS_CREATED_FILE`, `PROCESS_MODIFIED_REGISTRY`, `PROCESS_TERMINATED`, `DESTINATION_SHARED`, `SUPPORTING_CONTEXT`.
 - **Bounded expansion**: depth ≤ 3; only identity-backed edges recurse; scope/context edges never become expansion points, which prevents graph explosion.
 - **Deduplication**: repeated evidence becomes one fact with an `occurrences` count plus a bounded carrier list, so hundreds of identical network events cannot inflate the score.
 - **Caps**: at most 5 context leaves per node; consistency counts only the three strongest carriers (identity full weight, context half).

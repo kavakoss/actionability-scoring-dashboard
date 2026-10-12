@@ -42,7 +42,7 @@ STRONG_THRESHOLD = 0.85
 SUPPORTED_THRESHOLD = 0.65
 CANDIDATE_THRESHOLD = 0.45
 
-IDENTITY_PIVOTS = {"process.guid", "parent.child.guid", "file.hash.sha256"}
+IDENTITY_PIVOTS = {"process.guid", "parent.child.guid"}
 MAX_CASE_NODES = 200
 MAX_CONTEXT_LEAVES_PER_NODE = 5
 MAX_AGGREGATED_EVENTS_PER_FACT = 25
@@ -71,9 +71,6 @@ RELATION_TYPES = {
     },
     "PARENT_CHILD": {
         "window_s": 3600, "tau_s": 900, "host": "same", "expand": True,
-    },
-    "SAME_BINARY": {
-        "window_s": 86400, "tau_s": 21600, "host": "any", "expand": True,
     },
     "PROCESS_CONNECTED_TO": {
         "window_s": 300, "tau_s": 300, "host": "same", "expand": True,
@@ -160,16 +157,6 @@ def extract_pivots(norm: dict) -> list:
             "host_scoped": True,
         })
 
-    sha256 = norm["file"]["hash"].get("sha256")
-    if sha256:
-        pivots.append({
-            "name": "sha256",
-            "field": "file.hash.sha256",
-            "value": sha256,
-            "window_s": 86400,
-            "host_scoped": False,
-        })
-
     if norm["destination"]["ip"]:
         pivots.append({
             "name": "destination",
@@ -209,11 +196,6 @@ def _verified_pivots(a: dict, b: dict) -> list:
             found.append(("parent.child.guid", PIVOT_STRENGTHS["parent.child.guid"]))
         if bp["guid"] and bp["guid"] == ap["parent"]["guid"]:
             found.append(("parent.child.guid", PIVOT_STRENGTHS["parent.child.guid"]))
-
-    sha_a = a["file"]["hash"].get("sha256")
-    sha_b = b["file"]["hash"].get("sha256")
-    if sha_a and sha_a == sha_b:
-        found.append(("file.hash.sha256", PIVOT_STRENGTHS["file.hash.sha256"]))
 
     da, db = a["destination"], b["destination"]
     if da["ip"] and da["ip"] == db["ip"]:
@@ -261,10 +243,9 @@ def _relation_label(a: dict, b: dict) -> str | None:
         if bp["guid"] and bp["guid"] == ap["parent"]["guid"]:
             return "PARENT_CHILD"
 
-    sha_a = a["file"]["hash"].get("sha256")
-    sha_b = b["file"]["hash"].get("sha256")
-    if sha_a and sha_a == sha_b:
-        return "SAME_BINARY"
+    # Same-binary matching (identical hash) is deliberately NOT a relation:
+    # common binaries such as cmd.exe/certutil.exe share a hash across unrelated
+    # processes and hosts, so it only produced false correlations.
 
     da, db = a["destination"], b["destination"]
     if da["ip"] and da["ip"] == db["ip"]:
@@ -368,12 +349,7 @@ def classify_pair(a: dict, b: dict) -> dict | None:
     ]
     evidence.extend(f"also={name}" for name, _ in verified if name != primary_name)
 
-    if relation == "SAME_BINARY" and same_host:
-        # Same bytes on the same host is expected; this pivot exists to find
-        # the same binary on OTHER endpoints, so it must not recurse here.
-        expandable = False
-    else:
-        expandable = bool(config["expand"] and identity_backed and decision in ("strong", "supported"))
+    expandable = bool(config["expand"] and identity_backed and decision in ("strong", "supported"))
 
     edge = {
         "source": a["id"],
@@ -572,12 +548,8 @@ def build_timeline_with_edges(graph: nx.Graph, seed_id: str, max_depth: int = 3)
 def _fact_key(relation: str, candidate: dict):
     """Collapse repeated evidence into one context fact with occurrences.
 
-    Ten executions of the same binary / ten network records for the same
-    destination must not become ten case nodes.
+    Ten network records for the same destination must not become ten case nodes.
     """
-    if relation == "SAME_BINARY":
-        sha256 = candidate["file"]["hash"].get("sha256")
-        return (relation, sha256, candidate["host"]["name"], candidate["process"]["executable"])
     if relation in ("DESTINATION_SHARED", "SUPPORTING_CONTEXT"):
         return (
             relation,
