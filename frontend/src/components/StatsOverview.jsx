@@ -1,91 +1,122 @@
-import { Meter, Panel, SectionTitle, TechniqueTag, levelTone } from './ui'
+import {
+  EmptyState,
+  LevelBadge,
+  Meter,
+  Panel,
+  SkeletonRows,
+  TECH_LABELS,
+  TechniqueTag,
+  levelTone,
+} from './ui'
 
-const TECH_LABEL = {
-  'T1059.001': 'PowerShell',
-  'T1059.003': 'Windows Command Shell',
-  T1105: 'Ingress Tool Transfer',
-}
-
-const LEVEL_TONE = {
-  High: 'text-band-high',
-  Medium: 'text-band-medium',
-  Low: 'text-band-low',
-}
-
-function Metric({ label, value, detail, tone = 'text-ink' }) {
-  return (
-    <div className="rounded-lg border border-edge/70 bg-raised/60 p-4">
-      <p className="text-sm font-medium text-ink-muted">{label}</p>
-      <p className={`tabular mt-2 text-3xl font-semibold tracking-tight ${tone}`}>{value}</p>
-      <p className="mt-1 text-xs text-ink-faint">{detail}</p>
-    </div>
-  )
-}
-
-export default function StatsOverview({ stats }) {
-  if (!stats) return null
-
+export default function StatsOverview({ stats, error }) {
+  if (error)
+    return (
+      <Panel>
+        <EmptyState title="Overview unavailable" hint={error} />
+      </Panel>
+    )
+  if (!stats)
+    return (
+      <Panel>
+        <SkeletonRows rows={3} />
+      </Panel>
+    )
   const { total_alerts = 0, by_level = {}, by_technique = {} } = stats
-
   return (
-    <div className="space-y-5">
-      <Panel className="p-5 md:p-6">
-        <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h2 className="text-lg font-semibold tracking-tight text-ink">Actionability overview</h2>
-            <p className="mt-1 max-w-2xl text-sm text-ink-muted">
-              AHP-weighted telemetry completeness. These scores describe evidence quality, not threat severity.
+    <div className="space-y-6">
+      <div className="page-heading">
+        <div>
+          <p className="eyebrow">Telemetry assessment</p>
+          <h1 className="mt-2 text-display font-semibold">Alert overview</h1>
+          <p className="mt-2 text-body text-ink-muted">
+            How much of the expected evidence is available for investigation?
+          </p>
+        </div>
+      </div>
+      <Panel>
+        <div className="grid sm:grid-cols-[1.3fr_2fr]">
+          <div className="border-b border-edge p-6 sm:border-b-0 sm:border-r">
+            <p className="text-small text-ink-muted">Alerts analyzed</p>
+            <p className="mt-2 text-[44px] font-semibold leading-tight tracking-tight">
+              {total_alerts}
+            </p>
+            <p className="mt-2 text-caption text-ink-faint">
+              Current source and study window
             </p>
           </div>
-          <span className="rounded-full bg-raised px-3 py-1.5 text-xs font-medium text-ink-muted">
-            {total_alerts} alerts analyzed
-          </span>
+          <div className="grid grid-cols-3 divide-x divide-edge py-6">
+            {['High', 'Medium', 'Low'].map((level) => {
+              const count = by_level[level] ?? 0
+              const share = total_alerts
+                ? Math.round((count / total_alerts) * 100)
+                : 0
+              return (
+                <div key={level} className="min-w-0 px-4 sm:px-6">
+                  <LevelBadge level={level} />
+                  <p className="mt-3 text-display font-medium">{count}</p>
+                  <p className="mt-2 text-caption text-ink-faint">
+                    {share}% of alerts
+                  </p>
+                  <Meter
+                    value={share}
+                    tone={levelTone(level)}
+                    className="mt-3"
+                  />
+                </div>
+              )
+            })}
+          </div>
         </div>
-
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          <Metric label="Alerts analyzed" value={total_alerts} detail="Current source and study window" />
-          {['High', 'Medium', 'Low'].map((level) => {
-            const value = by_level[level] ?? 0
-            const share = total_alerts ? Math.round((value / total_alerts) * 100) : 0
-            return (
-              <Metric
-                key={level}
-                label={`${level} actionability`}
-                value={value}
-                detail={`${share}% of analyzed alerts`}
-                tone={LEVEL_TONE[level]}
-              />
-            )
-          })}
+        <div className="border-t border-edge px-6 py-3 text-caption text-ink-muted">
+          Actionability bands describe evidence completeness. A high score means
+          more complete evidence.
         </div>
       </Panel>
-
-      <Panel>
-        <SectionTitle right={<span className="text-xs text-ink-muted">Mean normalized AHP score</span>}>
-          Technique coverage
-        </SectionTitle>
-        <div className="grid gap-4 p-5 md:grid-cols-3">
+      <section aria-label="Technique coverage">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-heading font-semibold">Technique coverage</h2>
+          <span className="text-caption text-ink-faint">
+            Mean normalized AHP score
+          </span>
+        </div>
+        <div className="grid gap-6 md:grid-cols-3">
           {Object.entries(by_technique).map(([technique, data]) => {
             const score = data.avg_percentage ?? data.avg_score ?? 0
             return (
-              <div key={technique} className="rounded-lg border border-edge p-4">
-                <TechniqueTag technique={technique} label={`${technique} · ${TECH_LABEL[technique] || technique}`} />
-                <div className="mt-4 flex items-baseline justify-between gap-3">
-                  <span className="tabular text-2xl font-semibold tracking-tight text-ink">{score}%</span>
-                  <span className="text-xs text-ink-muted">
-                    {data.count} {data.count === 1 ? 'alert' : 'alerts'}
+              <div
+                key={technique}
+                className="border-l-2 border-edge-strong pl-4"
+              >
+                <div className="flex flex-wrap justify-between gap-2">
+                  <TechniqueTag
+                    technique={technique}
+                    label={TECH_LABELS[technique] || technique}
+                  />
+                  <span className="font-mono text-caption text-ink-faint">
+                    {technique}
                   </span>
                 </div>
-                <Meter value={score} tone={levelTone(score > 50 ? 'High' : score >= 25 ? 'Medium' : 'Low')} className="mt-2" />
-                <p className="mt-2 text-xs text-ink-faint">Average expected-field completeness</p>
+                <div className="mb-3 mt-3 flex items-baseline justify-between">
+                  <p className="text-title font-medium">
+                    {score}
+                    <span className="text-small text-ink-faint"> /100</span>
+                  </p>
+                  <span className="text-caption text-ink-muted">
+                    {data.count} alerts
+                  </span>
+                </div>
+                <Meter
+                  value={score}
+                  tone={levelTone(
+                    score > 50 ? 'High' : score >= 25 ? 'Medium' : 'Low',
+                  )}
+                />
               </div>
             )
           })}
-          {Object.keys(by_technique).length === 0 && (
-            <p className="text-sm text-ink-muted">No technique-mapped alerts in this view.</p>
-          )}
         </div>
-      </Panel>
+      </section>
     </div>
   )
 }

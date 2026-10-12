@@ -3,6 +3,7 @@ const BASE = '/api'
 export async function fetchAlerts(params = {}) {
   const qs = new URLSearchParams(params).toString()
   const res = await fetch(`${BASE}/alerts?${qs}`)
+  if (!res.ok) throw new Error('Unable to load alerts')
   return res.json()
 }
 
@@ -20,12 +21,14 @@ export async function fetchTimeline(id) {
 
 export async function fetchStats() {
   const res = await fetch(`${BASE}/stats`)
+  if (!res.ok) throw new Error('Unable to load statistics')
   return res.json()
 }
 
 export async function fetchCases(params = {}) {
   const qs = new URLSearchParams(params).toString()
   const res = await fetch(`${BASE}/cases?${qs}`)
+  if (!res.ok) throw new Error('Unable to load cases')
   return res.json()
 }
 
@@ -37,6 +40,7 @@ export async function fetchCaseDetail(id) {
 
 export async function fetchHealth() {
   const res = await fetch(`${BASE}/health`)
+  if (!res.ok) throw new Error('Unable to load source status')
   return res.json()
 }
 

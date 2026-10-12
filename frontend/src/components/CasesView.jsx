@@ -1,150 +1,180 @@
 import { useEffect, useState } from 'react'
 import { fetchCases } from '../api'
-import { EmptyState, Meter, Panel, SectionTitle, SkeletonRows, TechniqueTag, levelTone, shortId } from './ui'
-
-const TECH_LABELS = {
-  'T1059.001': 'PowerShell',
-  'T1059.003': 'CMD',
-  'T1105': 'Ingress Transfer',
-}
-
-const BAND_TEXT = {
-  High: 'text-band-high',
-  Medium: 'text-band-medium',
-  Low: 'text-band-low',
-}
-
-const bandText = (level) => BAND_TEXT[level] || 'text-ink'
-
-function formatTime(value) {
-  if (!value) return '-'
-  return new Date(value).toLocaleString(undefined, {
-    month: 'short',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  })
-}
+import {
+  EmptyState,
+  Filters,
+  Panel,
+  ScoreCell,
+  SectionTitle,
+  SkeletonRows,
+  TECH_LABELS,
+  TechniqueTag,
+  WazuhBadge,
+  formatTime,
+  shortId,
+} from './ui'
 
 export default function CasesView({ onSelect }) {
   const [cases, setCases] = useState(null)
+  const [error, setError] = useState(null)
   const [filters, setFilters] = useState({ technique: '', level: '' })
-
   useEffect(() => {
-    const params = {}
-    if (filters.technique) params.technique = filters.technique
-    if (filters.level) params.level = filters.level
+    let active = true
     setCases(null)
-    fetchCases(params)
-      .then((data) => setCases(data.cases || []))
-      .catch(() => setCases([]))
+    setError(null)
+    fetchCases(
+      Object.fromEntries(Object.entries(filters).filter(([, value]) => value)),
+    )
+      .then((data) => {
+        if (active) setCases(data.cases || [])
+      })
+      .catch(() => {
+        if (active) setError('Unable to load cases. Check the API connection.')
+      })
+    return () => {
+      active = false
+    }
   }, [filters])
-
-  const update = (key) => (event) => setFilters((prev) => ({ ...prev, [key]: event.target.value }))
-
   return (
-    <Panel>
-      <SectionTitle
-        right={
-          <div className="flex flex-wrap items-center gap-2">
-            <select
-              aria-label="Filter cases by technique"
-              value={filters.technique}
-              onChange={update('technique')}
-              className="rounded-lg border border-edge bg-panel px-3 py-2 text-sm text-ink outline-none focus:border-accent"
-            >
-              <option value="">All techniques</option>
-              <option value="T1059.001">T1059.001 PowerShell</option>
-              <option value="T1059.003">T1059.003 CMD</option>
-              <option value="T1105">T1105 Ingress Transfer</option>
-            </select>
-            <select
-              aria-label="Filter cases by actionability"
-              value={filters.level}
-              onChange={update('level')}
-              className="rounded-lg border border-edge bg-panel px-3 py-2 text-sm text-ink outline-none focus:border-accent"
-            >
-              <option value="">All levels</option>
-              <option value="High">High</option>
-              <option value="Medium">Medium</option>
-              <option value="Low">Low</option>
-            </select>
-            <span className="min-w-16 text-right text-xs text-ink-muted">
-              {cases ? `${cases.length} cases` : 'loading…'}
-            </span>
-          </div>
-        }
-      >
-        Correlated cases
-      </SectionTitle>
-
-      {cases === null && <SkeletonRows rows={6} />}
-
-      {cases && cases.length === 0 && (
-        <EmptyState title="No cases match the filters" hint="Try a different technique or level." />
-      )}
-
-      {cases && cases.length > 0 && (
-        <div className="overflow-x-auto">
-          <table className="w-full text-left">
-            <thead>
-              <tr className="border-b border-edge bg-raised/60 text-xs text-ink-muted">
-                <th className="px-5 py-3 font-semibold">Seed alert</th>
-                <th className="px-4 py-3 font-semibold">Endpoint</th>
-                <th className="px-4 py-3 font-semibold">ATT&CK technique</th>
-                <th className="px-4 py-3 font-semibold">Observed</th>
-                <th className="px-4 py-3 font-semibold">Case actionability</th>
-                <th className="px-4 py-3 font-semibold">Wazuh level</th>
-                <th className="px-4 py-3 font-semibold">Evidence coverage</th>
-                <th className="px-4 py-3 font-semibold">Telemetry</th>
-              </tr>
-            </thead>
-            <tbody>
-              {cases.map((item) => (
-                <tr key={item.case_id} className="row-link cursor-pointer" onClick={() => onSelect(item.case_id)}>
-                  <td className="max-w-[320px] px-5 py-3">
-                    <div className="truncate text-sm font-medium text-ink" title={item.seed?.rule?.description || 'Seed alert'}>
-                      {item.seed?.rule?.description || 'Seed alert'}
-                    </div>
-                    <div className="mt-1 font-mono text-xs text-ink-faint">{shortId(item.case_id, 26)}</div>
-                  </td>
-                  <td className="whitespace-nowrap px-4 py-3 text-sm font-medium text-ink-muted">
-                    {item.seed?.agent || '-'}
-                  </td>
-                  <td className="px-4 py-3">
-                    <TechniqueTag technique={item.technique} label={TECH_LABELS[item.technique] || item.technique} />
-                  </td>
-                  <td className="tabular whitespace-nowrap px-4 py-3 text-sm text-ink-muted">{formatTime(item.seed?.timestamp)}</td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-2">
-                      <span className={`tabular whitespace-nowrap text-sm font-semibold ${bandText(item.level)}`}>
-                        {item.case_score}/100
-                      </span>
-                      <Meter value={item.case_score} tone={levelTone(item.level)} className="w-16" />
-                    </div>
-                  </td>
-                  <td className="px-4 py-3">
-                    <span className="rounded-md border border-edge bg-raised px-2 py-1 text-xs font-medium text-ink-muted">
-                      L{item.seed?.rule?.level ?? '-'}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-2">
-                      <Meter value={item.required_coverage * 100} tone="bg-accent" className="w-16" />
-                      <span className="tabular text-sm text-ink-muted">{(item.required_coverage * 100).toFixed(0)}%</span>
-                    </div>
-                  </td>
-                  <td className="whitespace-nowrap px-4 py-3 text-sm text-ink-muted">
-                    {item.nodes} {item.nodes === 1 ? 'event' : 'events'} · {item.edges}{' '}
-                    {item.edges === 1 ? 'relation' : 'relations'}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+    <div className="space-y-6">
+      <div className="page-heading">
+        <div>
+          <p className="eyebrow">Investigation workspace</p>
+          <h1 className="mt-2 text-display font-semibold">Correlated cases</h1>
+          <p className="mt-2 text-body text-ink-muted">
+            From a seed alert to the evidence needed to investigate.
+          </p>
         </div>
-      )}
-    </Panel>
+        <p className="text-small text-ink-muted">
+          <strong className="mr-2 text-title font-medium text-ink">
+            {cases?.length ?? '—'}
+          </strong>
+          cases in view
+        </p>
+      </div>
+      <Panel>
+        <SectionTitle
+          right={
+            <Filters
+              kind="cases"
+              filters={filters}
+              onChange={(key, value) =>
+                setFilters((prev) => ({ ...prev, [key]: value }))
+              }
+            />
+          }
+        >
+          Case inventory
+        </SectionTitle>
+        {error ? (
+          <EmptyState title="Cases unavailable" hint={error} />
+        ) : cases === null ? (
+          <SkeletonRows rows={6} />
+        ) : !cases.length ? (
+          <EmptyState
+            title="No cases match these filters"
+            hint="Choose another technique or actionability band."
+          />
+        ) : (
+          <div className="table-scroll">
+            <table
+              className="data-table min-w-[1136px]"
+              aria-label="Correlated cases"
+            >
+              <colgroup>
+                {[23, 12, 13, 11, 15, 7, 8, 11].map((width, i) => (
+                  <col key={i} style={{ width: `${width}%` }} />
+                ))}
+              </colgroup>
+              <thead>
+                <tr>
+                  <th>Seed alert</th>
+                  <th>Endpoint</th>
+                  <th>ATT&amp;CK technique</th>
+                  <th>Observed · UTC</th>
+                  <th className="numeric">Actionability</th>
+                  <th className="numeric">Wazuh</th>
+                  <th className="numeric">Coverage</th>
+                  <th className="numeric">Telemetry</th>
+                </tr>
+              </thead>
+              <tbody>
+                {cases.map((item) => (
+                  <tr
+                    key={item.case_id}
+                    className="row-link cursor-pointer"
+                    onClick={() => onSelect(item.case_id)}
+                  >
+                    <td>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          onSelect(item.case_id)
+                        }}
+                        className="table-title"
+                        title={item.seed?.rule?.description || 'Seed alert'}
+                      >
+                        {item.seed?.rule?.description?.trim() || 'Seed alert'}
+                      </button>
+                      <p
+                        className="mt-1 truncate font-mono text-caption text-ink-faint"
+                        title={item.case_id}
+                      >
+                        {shortId(item.case_id, 30)}
+                      </p>
+                    </td>
+                    <td className="text-ink-muted">
+                      <span className="block truncate" title={item.seed?.agent}>
+                        {item.seed?.agent || '—'}
+                      </span>
+                    </td>
+                    <td>
+                      <TechniqueTag
+                        technique={item.technique}
+                        label={TECH_LABELS[item.technique] || item.technique}
+                      />
+                      <p className="mt-1 pl-3.5 font-mono text-caption text-ink-faint">
+                        {item.technique}
+                      </p>
+                    </td>
+                    <td className="text-caption text-ink-muted">
+                      <time dateTime={item.seed?.timestamp}>
+                        {formatTime(item.seed?.timestamp).split(', ')[0]}
+                        <br />
+                        {formatTime(item.seed?.timestamp, true)}
+                      </time>
+                    </td>
+                    <td>
+                      <ScoreCell score={item.case_score} level={item.level} />
+                    </td>
+                    <td className="numeric">
+                      <WazuhBadge level={item.seed?.rule?.level} />
+                    </td>
+                    <td className="numeric">
+                      <span className="font-medium">
+                        {(item.required_coverage * 100).toFixed(0)}%
+                      </span>
+                      <p className="mt-1 text-caption text-ink-faint">
+                        required
+                      </p>
+                    </td>
+                    <td className="numeric text-ink-muted">
+                      {item.nodes} events
+                      <p className="mt-1 text-caption text-ink-faint">
+                        {item.edges} relations
+                      </p>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <div className="flex flex-wrap justify-between gap-2 border-t border-edge px-5 py-3 text-caption text-ink-faint">
+          <span>Select a seed alert to inspect its case.</span>
+          <span>High actionability = more complete evidence</span>
+        </div>
+      </Panel>
+    </div>
   )
 }
