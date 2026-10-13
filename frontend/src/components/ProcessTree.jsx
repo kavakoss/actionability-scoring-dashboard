@@ -143,14 +143,21 @@ export default function ProcessTree({ nodes = [], seedId }) {
     <div className="p-5">
       <div className="mb-4 flex flex-wrap items-center gap-x-5 gap-y-2 text-caption text-ink-muted">
         <strong className="font-medium text-ink">
-          {tree.groups.size} process groups
+          {tree.groups.size} {tree.groups.size === 1 ? 'process' : 'processes'} on the seed lineage
         </strong>
         <span>
           {systemCount} System · {userCount} User
         </span>
         <span className="text-ink-faint">
-          Parent → child · Roots are the highest captured ancestors
+          Parent → child · rooted at the seed's highest captured ancestor
         </span>
+        {tree.excludedCount > 0 && (
+          <span className="text-ink-faint">
+            {tree.excludedCount} context{' '}
+            {tree.excludedCount === 1 ? 'process' : 'processes'} not on the
+            lineage hidden (still counted in the case score)
+          </span>
+        )}
       </div>
       <div
         className="max-h-[680px] overflow-auto pr-2"

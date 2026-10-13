@@ -10,6 +10,12 @@ export const EVENT_LABELS = {
 }
 
 // Group the existing events for display; this does not add correlation edges.
+//
+// The tree is a *process creation* view: it shows only the seed's lineage
+// (ancestors and descendants reached through parent-process GUIDs). Processes
+// that entered the case through context correlations (e.g. SAME_BINARY) are
+// excluded from the tree but are still counted in the case score. When there
+// is no seed, the tree falls back to showing every group.
 export function buildProcessTree(nodes, seedId) {
   const groups = new Map()
   for (const node of nodes) {
@@ -42,18 +48,59 @@ export function buildProcessTree(nodes, seedId) {
     else parents.set(key, parent)
   }
   const children = new Map()
-  const roots = []
   for (const key of groups.keys()) {
     const parent = parents.get(key)
-    if (!parent) roots.push(key)
-    else {
+    if (parent) {
       if (!children.has(parent)) children.set(parent, [])
       children.get(parent).push(key)
     }
   }
+
+  // Lineage of the seed only: ancestors (up) union descendants (down).
+  const included = new Set()
+  if (seedKey) {
+    let cursor = seedKey
+    while (cursor && !included.has(cursor)) {
+      included.add(cursor)
+      cursor = parents.get(cursor)
+    }
+    const stack = [seedKey]
+    while (stack.length) {
+      const key = stack.pop()
+      for (const child of children.get(key) || []) {
+        if (!included.has(child)) {
+          included.add(child)
+          stack.push(child)
+        }
+      }
+    }
+  }
+  const keep = (key) => !seedKey || included.has(key)
+
+  const visibleGroups = new Map([...groups].filter(([key]) => keep(key)))
+  const visibleReps = new Map([...reps].filter(([key]) => keep(key)))
+  const visibleChildren = new Map(
+    [...children]
+      .filter(([key]) => keep(key))
+      .map(([key, list]) => [key, list.filter(keep)]),
+  )
+  const roots = [...visibleGroups.keys()].filter((key) => !parents.get(key))
+
   const order = (a, b) =>
-    (reps.get(a).timestamp || '').localeCompare(reps.get(b).timestamp || '')
+    (visibleReps.get(a)?.timestamp || '').localeCompare(
+      visibleReps.get(b)?.timestamp || '',
+    )
   roots.sort(order)
-  for (const list of children.values()) list.sort(order)
-  return { groups, reps, children, roots, seedKey, lineageWarnings }
+  for (const list of visibleChildren.values()) list.sort(order)
+
+  return {
+    groups: visibleGroups,
+    reps: visibleReps,
+    children: visibleChildren,
+    roots,
+    seedKey,
+    lineageWarnings: new Set([...lineageWarnings].filter(keep)),
+    excludedCount: groups.size - visibleGroups.size,
+    totalGroups: groups.size,
+  }
 }

@@ -37,7 +37,7 @@ test('groups events under their process creation and marks a non-creation seed',
   assert.equal(tree.seedKey, 'child')
 })
 
-test('retains uncaptured-parent groups and events without process GUIDs', () => {
+test('keeps the seed lineage and excludes context-only processes', () => {
   const tree = buildProcessTree(
     [
       {
@@ -49,9 +49,28 @@ test('retains uncaptured-parent groups and events without process GUIDs', () => 
     ],
     'orphan',
   )
-  assert.deepEqual(tree.roots, ['child', 'no-guid'])
+  assert.deepEqual(tree.roots, ['child'])
   assert.equal(tree.reps.get('child').parent_process_guid, 'uncaptured')
-  assert.equal(tree.groups.size, 2)
+  assert.equal(tree.groups.size, 1)
+  assert.equal(tree.excludedCount, 1)
+  assert.equal(tree.totalGroups, 2)
+})
+
+test('hides a process that is not on the seed lineage', () => {
+  const tree = buildProcessTree(
+    [
+      { id: 'p', process_guid: 'parent', event_id: '1', timestamp: '2026-10-03T01:00:00Z' },
+      { id: 's', process_guid: 'seed', parent_process_guid: 'parent', event_id: '1', timestamp: '2026-10-03T01:00:01Z' },
+      { id: 'c', process_guid: 'child', parent_process_guid: 'seed', event_id: '1', timestamp: '2026-10-03T01:00:02Z' },
+      // attached to the case by a SAME_BINARY-style context relation, not lineage
+      { id: 'x', process_guid: 'other', event_id: '1', timestamp: '2026-10-03T01:00:03Z' },
+    ],
+    's',
+  )
+  assert.deepEqual(tree.roots, ['parent'])
+  assert.deepEqual(tree.children.get('seed'), ['child'])
+  assert.equal(tree.groups.size, 3)
+  assert.equal(tree.excludedCount, 1)
 })
 
 test('malformed cyclic parent references cannot hide events or recurse forever', () => {
