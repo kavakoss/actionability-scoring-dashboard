@@ -295,7 +295,7 @@ export default function CaseDetail({ caseId, onBack, onOpenAlert }) {
       </div>
       <Panel>
         <SectionTitle
-          description="Captured events in chronological order"
+          description="Chronological events on the seed's process lineage"
           right={<span className="text-caption text-ink-faint">UTC</span>}
         >
           Event order

@@ -1,8 +1,28 @@
+import { useMemo } from 'react'
 import { Badge, EmptyState, formatTime, shortId } from './ui'
-import { EVENT_LABELS } from './processTreeModel.mjs'
+import { buildProcessTree, EVENT_LABELS } from './processTreeModel.mjs'
 
+// Chronological order of captured events, restricted to the seed's process
+// lineage (processed by processGuid/parentProcessGuid). Context-only events
+// that entered the case through other correlations (e.g. SAME_BINARY) are left
+// out of this view; they still count in the case score.
 export default function TimelineView({ nodes = [], edges = [], seedId }) {
-  const sorted = [...nodes].sort((a, b) =>
+  const { visible, visibleEdges, totalEvents } = useMemo(() => {
+    const lineage = buildProcessTree(nodes, seedId).groups
+    const kept = nodes.filter((node) =>
+      lineage.has(node.process_guid || node.id),
+    )
+    const keptIds = new Set(kept.map((node) => node.id))
+    return {
+      visible: kept,
+      visibleEdges: edges.filter(
+        (edge) => keptIds.has(edge.source) && keptIds.has(edge.target),
+      ),
+      totalEvents: nodes.length,
+    }
+  }, [nodes, edges, seedId])
+
+  const sorted = [...visible].sort((a, b) =>
     (a.timestamp || '').localeCompare(b.timestamp || ''),
   )
   const positions = new Map(sorted.map((node, i) => [node.id, i]))
@@ -10,7 +30,7 @@ export default function TimelineView({ nodes = [], edges = [], seedId }) {
     sorted.map((node) => [node.id, node.process || shortId(node.id, 16)]),
   )
   const linksByNode = new Map()
-  for (const edge of edges) {
+  for (const edge of visibleEdges) {
     const source = positions.get(edge.source)
     const target = positions.get(edge.target)
     if (source == null || target == null || source === target) continue
@@ -18,13 +38,11 @@ export default function TimelineView({ nodes = [], edges = [], seedId }) {
     const earlier =
       edge.parent_id || (source > target ? edge.target : edge.source)
     if (!linksByNode.has(later)) linksByNode.set(later, [])
-    linksByNode
-      .get(later)
-      .push({
-        relation: edge.relation,
-        other: earlier,
-        confidence: edge.confidence,
-      })
+    linksByNode.get(later).push({
+      relation: edge.relation,
+      other: earlier,
+      confidence: edge.confidence,
+    })
   }
   if (!sorted.length) return <EmptyState title="No correlated events" />
   return (
@@ -32,8 +50,15 @@ export default function TimelineView({ nodes = [], edges = [], seedId }) {
       className="max-h-[560px] overflow-auto p-5"
       tabIndex={0}
       role="region"
-      aria-label="Chronological events"
+      aria-label="Chronological events on the seed lineage"
     >
+      {totalEvents > sorted.length && (
+        <p className="mb-4 text-caption text-ink-faint">
+          {sorted.length} of {totalEvents} captured events are on the seed's
+          process lineage. Context events are excluded here but still count in
+          the case score.
+        </p>
+      )}
       <ol>
         {sorted.map((node) => {
           const seed = node.id === seedId
