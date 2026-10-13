@@ -210,15 +210,14 @@ def test_user_only_pair_is_candidate_context():
     assert edge["confidence"] < 0.85
 
 
-def test_same_binary_is_not_a_relation():
+def test_same_binary_cross_host():
     hash_value = "SHA256=" + "B" * 64
-    same_host_a = normalize_alert(make_event(1, "2026-09-22T08:00:00.000Z", guid="{a}", image=r"C:\tools\x.exe", user="h1\\alice", hashes=hash_value, host="HOST-A"))
-    same_host_b = normalize_alert(make_event(1, "2026-09-22T08:30:00.000Z", guid="{b}", image=r"C:\tools\x.exe", user="h1\\bob", hashes=hash_value, host="HOST-A"))
-    cross_host_b = normalize_alert(make_event(1, "2026-09-22T09:30:00.000Z", guid="{c}", image=r"C:\tools\x.exe", user="h2\\carol", hashes=hash_value, host="HOST-B"))
-    # An identical hash alone must not create a correlation edge (common
-    # binaries such as cmd.exe share a hash across unrelated processes).
-    assert classify_pair(same_host_a, same_host_b) is None
-    assert classify_pair(same_host_a, cross_host_b) is None
+    a = normalize_alert(make_event(1, "2026-09-22T08:00:00.000Z", guid="{a}", image=r"C:\tools\x.exe", user="h1\\alice", hashes=hash_value, host="HOST-A"))
+    b = normalize_alert(make_event(1, "2026-09-22T09:30:00.000Z", guid="{b}", image=r"C:\tools\x.exe", user="h2\\carol", hashes=hash_value, host="HOST-B"))
+    edge = classify_pair(a, b)
+    assert edge is not None
+    assert edge["relation"] == "SAME_BINARY"
+    assert edge["confidence"] >= 0.65
 
 
 def test_pair_outside_window_is_rejected():

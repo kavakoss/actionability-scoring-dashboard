@@ -209,28 +209,27 @@ def test_expansion_fact_aggregation_preserves_omitted_carriers_for_scoring():
     from case_scoring import score_expansion_case
     from correlation import expand_case
 
-    # Supporting-context aggregation: repeated same-user events collapse into one
-    # fact, and the folded-away carrier must still count for scoring.
+    digest = "SHA256=" + "D" * 64
     seed_raw = make_event(
         1, "2026-09-22T10:00:00.000Z", guid="{11111111-1111-1111-1111-111111111111}",
-        image=r"C:\Tools\a.exe", user="LAB\\alice", technique="T9999",
+        image=r"C:\Tools\tool.exe", hashes=digest, user=None, technique="T9999",
     )
     representative_raw = make_event(
         1, "2026-09-22T10:00:01.000Z", guid="{22222222-2222-2222-2222-222222222222}",
-        image=r"C:\Tools\a.exe", user="LAB\\alice", technique="T9999",
+        image=r"C:\Tools\tool.exe", hashes=digest, user=None, technique="T9999",
     )
     aggregated_raw = make_event(
         1, "2026-09-22T10:00:02.000Z", guid="{33333333-3333-3333-3333-333333333333}",
-        image=r"C:\Tools\a.exe", user="LAB\\alice", technique="T9999",
+        image=r"C:\Tools\tool.exe", hashes=digest, user="LAB\\alice", technique="T9999",
     )
     dataset = [seed_raw, representative_raw, aggregated_raw]
 
     def fake_search(pivot):
-        if pivot["field"] != "user.name":
+        if pivot["field"] != "file.hash.sha256":
             return []
         return [
             raw for raw in dataset
-            if normalize_alert(raw)["user"]["name"] == pivot["value"]
+            if raw["data"]["win"]["eventdata"].get("hashes", "").lower().endswith(pivot["value"])
         ]
 
     expansion = expand_case(seed_raw, fake_search, max_nodes=20)
