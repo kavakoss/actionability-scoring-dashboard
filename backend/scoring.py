@@ -116,7 +116,19 @@ def calculate_score(alert: dict, technique: str | None = None) -> dict:
             if is_expected:
                 cat_max += global_weight
                 if present:
-                    cat_score += global_weight
+                    completeness = 1.0
+                    validity = _validity(field, value) 
+                    provenance = _provenance_score(alert) 
+                    confidence = 1.0
+
+                    q = (
+                        QUALITY_WEIGHTS['completeness'] * completeness
+                        + QUALITY_WEIGHTS['validity'] * validity
+                        + QUALITY_WEIGHTS['consistency'] * 0.5
+                        + QUALITY_WEIGHTS['provenance'] * provenance
+                    )
+
+                    cat_score += global_weight * q * confidence
 
             field_details.append({
                 "field": field,
@@ -163,3 +175,51 @@ def calculate_score(alert: dict, technique: str | None = None) -> dict:
 def score_alerts(alerts: list) -> list:
     """Score a list of alerts and attach results."""
     return [{**alert, "scoring": calculate_score(alert)} for alert in alerts]
+
+# new
+import re
+import ipaddress
+
+QUALITY_WEIGHTS = {
+    "completeness": 0.30,
+    "validity": 0.30,
+    "consistency": 0.25,
+    "provenance": 0.15,
+}
+
+_GUID_RE = re.compile(r"^\{?[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\}?$")
+_SHA256_RE = re.compile(r"SHA256=[0-9A-Fa-f]{64}")
+
+def _validity(field: str, value) -> float:
+    text = str(value).strip()
+    if not text:
+        return 0.0
+    if field in ("processGuid", "parentProcessGuid"):
+        return 1.0 if _GUID_RE.match(text) else 0.5
+    if field == "hashes":
+        return 1.0 if _SHA256_RE.search(text) else 0.5
+    if field == "destinationIp":
+        try:
+            ipaddress.ip_address(text)
+            return 1.0
+        except ValueError:
+            return 0.0
+    if field == "destinationPort":
+        try:
+            port = int(text)
+            return 1.0 if 0 < port <= 65535 else 0.0
+        except ValueError:
+            return 0.0
+    return 1.0
+
+
+def _provenance_score(node: dict) -> float:
+    raw = node.get("raw") or {}
+    meta = raw.get("_provenance") or {}
+    if (meta.get("index") and meta.get("document_id")) or (raw.get("_index") and raw.get("_id")):
+        return 1.0
+    if raw.get("id") or raw.get("_id"):
+        return 0.9
+    if raw.get("@timestamp") and raw.get("agent"):
+        return 0.75
+    return 0.0
