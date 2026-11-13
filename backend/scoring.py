@@ -116,6 +116,133 @@ def calculate_score(alert: dict, technique: str | None = None) -> dict:
             if is_expected:
                 cat_max += global_weight
                 if present:
+                    cat_score += global_weight
+
+            field_details.append({
+                "field": field,
+                "label": meta["label"],
+                "weight": round(global_weight, 4),
+                "local_weight": field_weight["local_weight"],
+                "rank": field_weight["rank"],
+                "mitre_relationship": meta["mitre_relationship"],
+                "mitre_component": meta["mitre_component"],
+                "ossem": meta["ossem"],
+                "expected": is_expected,
+                "role": expected.get(field) if is_expected else None,
+                "present": present,
+                "value": str(value)[:120] if value else None,
+            })
+
+        categories[category] = {
+            "label": CATEGORY_LABELS[category],
+            "weight": category_weight_meta["weight"],
+            "applicable": cat_max > 0,
+            "score": round(cat_score, 4),
+            "max": round(cat_max, 4),
+            "percentage": round(cat_score / cat_max * 100, 1) if cat_max > 0 else 0.0,
+            "fields": field_details,
+        }
+        raw_score += cat_score
+        raw_max += cat_max
+
+    total = round(raw_score / raw_max * 100, 1) if raw_max > 0 else 0.0
+
+    return {
+        "total_score": total,
+        "max_score": 100.0,
+        "percentage": total,
+        "level": _level(total),
+        "technique": technique,
+        "profile": profile_key,
+        "profile_name": profile["name"],
+        "expected_field_count": len(expected),
+        "categories": categories,
+    }
+
+
+def score_alerts(alerts: list) -> list:
+    """Score a list of alerts and attach results."""
+    return [{**alert, "scoring": calculate_score(alert)} for alert in alerts]
+
+# tambahin S_seed scoring
+import ipaddress
+import re
+
+QUALITY_WEIGHTS = {
+    "completeness": 0.30,
+    "validity": 0.30,
+    "consistency": 0.25,
+    "provenance": 0.15,
+}
+
+_GUID_RE = re.compile(r"^\{?[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\}?$")
+_SHA256_RE = re.compile(r"SHA256=[0-9A-Fa-f]{64}")
+_MD5_RE = re.compile(r"MD5=[0-9A-Fa-f]{32}", re.IGNORECASE)
+
+def _validity(field: str, value) -> float:
+    text = str(value).strip()
+    if not text:
+        return 0.0
+    if field in ("processGuid", "parentProcessGuid"):
+        return 1.0 if _GUID_RE.match(text) else 0.5
+    if field == "hashes":
+        has_sha256 = bool(_SHA256_RE.search(text))
+        has_md5 = bool(_MD5_RE.search(text))
+        return 1.0 if has_sha256 or has_md5 else 0.5
+    if field == "destinationIp":
+        try:
+            ipaddress.ip_address(text)
+            return 1.0
+        except ValueError:
+            return 0.0
+    if field == "destinationPort":
+        try:
+            port = int(text)
+            return 1.0 if 0 < port <= 65535 else 0.0
+        except ValueError:
+            return 0.0
+    return 1.0
+
+
+def _provenance_score(node: dict) -> float:
+    # raw = node.get("raw") or {}
+    raw = node
+    meta = raw.get("_provenance") or {}
+    if (meta.get("index") and meta.get("document_id")) or (raw.get("_index") and raw.get("_id")):
+        return 1.0
+    if raw.get("id") or raw.get("_id"):
+        return 0.9
+    if raw.get("@timestamp") and raw.get("agent"):
+        return 0.75
+    return 0.0
+
+def calculate_seed_score(alert: dict, technique: str | None = None) -> dict:
+    """Calculate the technique-aware actionability case score for one alert."""
+    weights = load_weights()
+    technique = technique or detect_technique(alert)
+    profile_key, profile = get_profile(technique)
+    expected = profile["fields"]
+
+    categories = {}
+    raw_score = 0.0
+    raw_max = 0.0
+
+    for category, fields in FIELD_META.items():
+        category_weight_meta = weights["categories"][category]
+        cat_score = 0.0
+        cat_max = 0.0
+        field_details = []
+
+        for field, meta in fields.items():
+            field_weight = category_weight_meta["fields"][field]
+            global_weight = field_weight["global_weight"]
+            value = _get_nested(alert, meta["path"])
+            present = not is_empty(value)
+            is_expected = field in expected
+
+            if is_expected:
+                cat_max += global_weight
+                if present:
                     completeness = 1.0
                     validity = _validity(field, value) 
                     provenance = _provenance_score(alert) 
@@ -171,55 +298,6 @@ def calculate_score(alert: dict, technique: str | None = None) -> dict:
         "categories": categories,
     }
 
-
-def score_alerts(alerts: list) -> list:
+def score_seed(alerts: list) -> list:
     """Score a list of alerts and attach results."""
-    return [{**alert, "scoring": calculate_score(alert)} for alert in alerts]
-
-# new
-import re
-import ipaddress
-
-QUALITY_WEIGHTS = {
-    "completeness": 0.30,
-    "validity": 0.30,
-    "consistency": 0.25,
-    "provenance": 0.15,
-}
-
-_GUID_RE = re.compile(r"^\{?[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\}?$")
-_SHA256_RE = re.compile(r"SHA256=[0-9A-Fa-f]{64}")
-
-def _validity(field: str, value) -> float:
-    text = str(value).strip()
-    if not text:
-        return 0.0
-    if field in ("processGuid", "parentProcessGuid"):
-        return 1.0 if _GUID_RE.match(text) else 0.5
-    if field == "hashes":
-        return 1.0 if _SHA256_RE.search(text) else 0.5
-    if field == "destinationIp":
-        try:
-            ipaddress.ip_address(text)
-            return 1.0
-        except ValueError:
-            return 0.0
-    if field == "destinationPort":
-        try:
-            port = int(text)
-            return 1.0 if 0 < port <= 65535 else 0.0
-        except ValueError:
-            return 0.0
-    return 1.0
-
-
-def _provenance_score(node: dict) -> float:
-    raw = node.get("raw") or {}
-    meta = raw.get("_provenance") or {}
-    if (meta.get("index") and meta.get("document_id")) or (raw.get("_index") and raw.get("_id")):
-        return 1.0
-    if raw.get("id") or raw.get("_id"):
-        return 0.9
-    if raw.get("@timestamp") and raw.get("agent"):
-        return 0.75
-    return 0.0
+    return [{**alert, "seed_scoring": calculate_seed_score(alert)} for alert in alerts]
