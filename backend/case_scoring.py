@@ -50,6 +50,7 @@ MAX_CONSISTENCY_CARRIERS = 3
 
 _GUID_RE = re.compile(r"^\{?[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\}?$")
 _SHA256_RE = re.compile(r"SHA256=[0-9A-Fa-f]{64}")
+_MD5_RE = re.compile(r"MD5=[0-9A-Fa-f]{32}", re.IGNORECASE)
 
 
 def _get_nested(data: dict, path: str):
@@ -68,7 +69,9 @@ def _validity(field: str, value) -> float:
     if field in ("processGuid", "parentProcessGuid"):
         return 1.0 if _GUID_RE.match(text) else 0.5
     if field == "hashes":
-        return 1.0 if _SHA256_RE.search(text) else 0.5
+        has_sha256 = bool(_SHA256_RE.search(text))
+        has_md5 = bool(_MD5_RE.search(text))
+        return 1.0 if has_sha256 or has_md5 else 0.5
     if field == "destinationIp":
         try:
             ipaddress.ip_address(text)
@@ -193,7 +196,7 @@ def score_case(nodes: list, edges: list, seed_id: str, technique: str | None = N
 
     for category, fields in FIELD_META.items():
         for field, meta in fields.items():
-            if field not in expected:
+            if field not in expected or expected[field] == 'supporting':
                 continue
             weight = weights["categories"][category]["fields"][field]["global_weight"]
             role = expected[field]
