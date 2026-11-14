@@ -196,7 +196,9 @@ def score_case(nodes: list, edges: list, seed_id: str, technique: str | None = N
 
     for category, fields in FIELD_META.items():
         for field, meta in fields.items():
-            if field not in expected or expected[field] == 'supporting':
+            # if field not in expected or expected[field] == 'supporting':
+            #     continue
+            if field not in expected:
                 continue
             weight = weights["categories"][category]["fields"][field]["global_weight"]
             role = expected[field]

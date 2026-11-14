@@ -84,7 +84,6 @@ SCORED_ALERTS: list = []
 GRAPH = None
 CASES: dict = {}
 CASE_DATA: dict = {}
-LAST_ERROR: str | None = None
 LIVE_DATA_QUALITY = {
     "raw_candidates_count": 0,
     "excluded_known_benign_count": 0,
@@ -147,44 +146,21 @@ def load_source(
     alerts = _load_live()
 
     SCORED_ALERTS = alerts
-    LAST_ERROR = None
     _rebuild_graph()
 
+print('Loading log...')
 try:
     load_source()
 except Exception as exc:  # noqa: BLE001 - keep serving with the mock source
     print(exc)
+print('Finished loading log...')
 
-# group_by_mitre = {}
-# for alert in SCORED_ALERTS:
-#     cases = CASES.get(alert.get('_id'))
+group_by_mitre = {
+    'T1059.001': None,
+    'T1059.003': None,
+    'T1105': None
+}
 
-#     mitre = alert.get('mitre').get('technique')
-#     s_alert = alert.get('scoring').get('total_score')
-#     s_seed = alert.get('seed_scoring').get('total_score')
-#     s_case = cases.get('case_score')
-#     d_s = (s_case - s_seed) - (s_alert - s_seed)
-
-#     if mitre in group_by_mitre:
-#         group_by_mitre[mitre].append(d_s)
-#     else:
-#         group_by_mitre[mitre] = [d_s]
-
-# border = f"+{'-'*22}+{'-'*7}+{'-'*10}+{'-'*12}+"
-# print()
-# print(border)
-# print(f"| {'MITRE':<20} | {'N':>5} | {'Mean':>8} | {'Changed':>10} |")
-# print(f"| {'-'*20} | {'-'*5} | {'-'*8} | {'-'*10} |")
-# for key, value in group_by_mitre.items():
-#     n = len(value)
-#     mean = sum(value) / n
-#     changed = sum(v > 0.0 for v in value)
-#     ratio = f'{changed} / {n}'
-
-#     print(f'| {key:<20} | {n:>5} | {mean:>8.2f} | {ratio:>10} |')
-# print(border)
-
-group_by_mitre = {}
 for alert in SCORED_ALERTS:
     cases = CASES.get(alert.get('_id'))
 
@@ -195,7 +171,7 @@ for alert in SCORED_ALERTS:
 
     d_s = ((s_case / 100) - (s_seed / 87.5)) * 100
 
-    if mitre not in group_by_mitre:
+    if mitre not in group_by_mitre or group_by_mitre[mitre] == None:
         group_by_mitre[mitre] = {
             'd_s': [],
             's_alert': [],
@@ -239,11 +215,111 @@ for key, value in group_by_mitre.items():
     print(
         f"| {key:<18} "
         f"| {n:>3} "
-        f"| {mean_alert:>8.2f} "
-        f"| {mean_seed:>8.2f} "
-        f"| {mean_case:>8.2f} "
+        f"| {mean_alert:>10.2f} "
+        f"| {mean_seed:>9.2f} "
+        f"| {mean_case:>9.2f} "
         f"| {mean_delta:>8.2f} "
         f"| {ratio:>10} |"
     )
 
 print(border)
+
+
+
+
+# import argparse
+# import csv
+# import json
+# import re
+# import urllib.request
+# from collections import defaultdict
+# from datetime import datetime, timezone
+# from pathlib import Path
+
+# TECHNIQUES = ("T1059.001", "T1059.003", "T1105")
+
+# NOTE_RE = re.compile(r"(?P<key>variation|rep|step|status|EID3)=([^|]+)")
+
+# # def parse_iso(value: str) -> datetime:
+# #     return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(timezone.utc)
+# def parse_iso(value: str) -> datetime:
+#     value = value.replace("Z", "+00:00")
+
+#     # Convert +0000 into +00:00
+#     value = re.sub(r"([+-]\d{2})(\d{2})$", r"\1:\2", value)
+
+#     return datetime.fromisoformat(value).astimezone(timezone.utc)
+
+# def parse_notes(notes: str) -> dict:
+#     out = {}
+#     for key, val in NOTE_RE.findall(notes or ""):
+#         out[key.strip()] = val.strip()
+#     return out
+
+# def load_runs(path: Path) -> list[dict]:
+#     runs = []
+#     with path.open(encoding="utf-8-sig", newline="") as handle:
+#         for row in csv.DictReader(handle):
+#             if row.get("condition") not in ("A", "B"):
+#                 continue
+#             notes = parse_notes(row.get("notes", ""))
+#             if "variation" not in notes:
+#                 # Legacy pilot rows from before the 9-variation plan.
+#                 continue
+#             runs.append({
+#                 "run_id": row["run_id"],
+#                 "technique": row["technique"],
+#                 "condition": row["condition"],
+#                 "atomic_test": row["atomic_test"],
+#                 "start": parse_iso(row["start_utc"]),
+#                 "end": parse_iso(row["end_utc"]),
+#                 "variation": notes.get("variation", "?"),
+#                 "status": notes.get("status", "?"),
+#                 "eid3": notes.get("EID3", "?"),
+#                 'notes': notes
+#             })
+#     return runs
+
+# def in_window(alert: dict, start: datetime, end: datetime, pad_start=5, pad_end=20) -> bool:
+#     ts = alert.get("timestamp")
+#     if not ts:
+#         return False
+#     try:
+#         dt = parse_iso(ts)
+#     except ValueError:
+#         return False
+#     return (start.timestamp() - pad_start) <= dt.timestamp() <= (end.timestamp() + pad_end)
+
+# runs = load_runs(Path(r"C:/Users/Acer/Downloads/runs.csv"))
+# not_found = []
+
+# mitres = {}
+
+# for run in runs:
+#     found = False
+#     for alert in SCORED_ALERTS:
+#         if in_window(alert, run['start'], run['end']):
+#             found = True
+#             mitre = alert.get('mitre').get('technique')
+
+#             if mitre not in TECHNIQUES:
+#                 continue
+
+#             if mitre not in mitres:
+#                 mitres[mitre] = 0
+
+#             mitres[mitre] += 1
+
+#     if not found:
+#         not_found.append((run['run_id'], run['technique'], run['start'], run['notes']))
+            
+# sum = 0
+# for k, v in mitres.items():
+#     print(f'{k}: {v}')
+#     sum += v
+
+# print(f'Total: {sum}')
+# print()
+# print(f'Not Found')
+# for i, (run_id, technique, start, guid) in enumerate(not_found):
+#     print(f'{i+1}. {run_id} | {technique} | {start} | {guid}')
