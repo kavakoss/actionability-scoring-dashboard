@@ -155,6 +155,35 @@ try:
 except Exception as exc:  # noqa: BLE001 - keep serving with the mock source
     print(exc)
 
+# group_by_mitre = {}
+# for alert in SCORED_ALERTS:
+#     cases = CASES.get(alert.get('_id'))
+
+#     mitre = alert.get('mitre').get('technique')
+#     s_alert = alert.get('scoring').get('total_score')
+#     s_seed = alert.get('seed_scoring').get('total_score')
+#     s_case = cases.get('case_score')
+#     d_s = (s_case - s_seed) - (s_alert - s_seed)
+
+#     if mitre in group_by_mitre:
+#         group_by_mitre[mitre].append(d_s)
+#     else:
+#         group_by_mitre[mitre] = [d_s]
+
+# border = f"+{'-'*22}+{'-'*7}+{'-'*10}+{'-'*12}+"
+# print()
+# print(border)
+# print(f"| {'MITRE':<20} | {'N':>5} | {'Mean':>8} | {'Changed':>10} |")
+# print(f"| {'-'*20} | {'-'*5} | {'-'*8} | {'-'*10} |")
+# for key, value in group_by_mitre.items():
+#     n = len(value)
+#     mean = sum(value) / n
+#     changed = sum(v > 0.0 for v in value)
+#     ratio = f'{changed} / {n}'
+
+#     print(f'| {key:<20} | {n:>5} | {mean:>8.2f} | {ratio:>10} |')
+# print(border)
+
 group_by_mitre = {}
 for alert in SCORED_ALERTS:
     cases = CASES.get(alert.get('_id'))
@@ -163,23 +192,58 @@ for alert in SCORED_ALERTS:
     s_alert = alert.get('scoring').get('total_score')
     s_seed = alert.get('seed_scoring').get('total_score')
     s_case = cases.get('case_score')
-    d_s = (s_case - s_seed) - (s_alert - s_seed)
 
-    if mitre in group_by_mitre:
-        group_by_mitre[mitre].append(d_s)
-    else:
-        group_by_mitre[mitre] = [d_s]
+    d_s = ((s_case / 100) - (s_seed / 87.5)) * 100
 
-border = f"+{'-'*22}+{'-'*7}+{'-'*10}+{'-'*12}+"
+    if mitre not in group_by_mitre:
+        group_by_mitre[mitre] = {
+            'd_s': [],
+            's_alert': [],
+            's_seed': [],
+            's_case': [],
+        }
+
+    group = group_by_mitre[mitre]
+    group['d_s'].append(d_s)
+    group['s_alert'].append(s_alert)
+    group['s_seed'].append(s_seed)
+    group['s_case'].append(s_case)
+
+
+border = f"+{'-'*20}+{'-'*5}+{'-'*12}+{'-'*11}+{'-'*11}+{'-'*10}+{'-'*12}+"
+
 print()
 print(border)
-print(f"| {'MITRE':<20} | {'N':>5} | {'Mean':>8} | {'Changed':>10} |")
-print(f"| {'-'*20} | {'-'*5} | {'-'*8} | {'-'*10} |")
+print(
+    f"| {'MITRE':<18} "
+    f"| {'N':>3} "
+    f"| {'Mean Alert':>8} "
+    f"| {'Mean Seed':>8} "
+    f"| {'Mean Case':>8} "
+    f"| {'Mean Δ':>8} "
+    f"| {'Changed':>10} |"
+)
+print(f"| {'-'*18} | {'-'*3} | {'-'*10} | {'-'*9} | {'-'*9} | {'-'*8} | {'-'*10} |")
+
 for key, value in group_by_mitre.items():
-    n = len(value)
-    mean = sum(value) / n
-    changed = sum(v > 0.0 for v in value)
+    n = len(value['d_s'])
+
+    mean_alert = sum(value['s_alert']) / n
+    mean_seed = sum(value['s_seed']) / n
+    mean_case = sum(value['s_case']) / n
+    mean_delta = sum(value['d_s']) / n
+
+    changed = sum(v > 0.0 for v in value['d_s'])
     ratio = f'{changed} / {n}'
 
-    print(f'| {key:<20} | {n:>5} | {mean:>8.2f} | {ratio:>10} |')
+    print(
+        f"| {key:<18} "
+        f"| {n:>3} "
+        f"| {mean_alert:>8.2f} "
+        f"| {mean_seed:>8.2f} "
+        f"| {mean_case:>8.2f} "
+        f"| {mean_delta:>8.2f} "
+        f"| {ratio:>10} |"
+    )
+
 print(border)
