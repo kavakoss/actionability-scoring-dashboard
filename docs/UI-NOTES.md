@@ -1,7 +1,7 @@
 # Dashboard UI
 
-This presentation refresh is based on upstream commit `e822432`. Backend scoring,
-API endpoints, response shapes and correlation rules are unchanged.
+Design notes for the React dashboard: tokens, typography, layout rules and the
+checks used to validate them. Screenshots are in [`screenshots/`](screenshots/).
 
 ## Tokens and typography
 
@@ -81,7 +81,3 @@ Headless Edge/Playwright checks passed for all four LIVE views at 1280px and
 checks included sticky headings, filters, empty/error states, encoded URL refresh,
 hide-missing, report download, local fonts, focus and reduced motion. No unexpected
 console errors, external asset requests or page-wide horizontal overflow occurred.
-The source was restored to LIVE with 91 cases in the configured study window.
-
-See [UI review](UI-REVIEW.md) for screenshots using deterministic MOCK data and
-instructions for reviewing this branch locally.

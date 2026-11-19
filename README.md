@@ -1,9 +1,5 @@
 # Actionability Scoring
 
-> **UI review branch:** See [the updated dashboard preview](docs/UI-REVIEW.md)
-> for screenshots and local review instructions. This branch contains the proposed
-> UI refresh; it has not been merged into `main`.
-
 <p align="center">
   <img src="docs/banner.svg" alt="Actionability Scoring — Wazuh/Sysmon telemetry quality" width="100%">
 </p>
@@ -14,7 +10,8 @@
 </p>
 
 <p align="center">
-  <a href="#testing"><img alt="tests" src="https://img.shields.io/badge/tests-43%20passed-2ea043?style=flat-square"></a>
+  <a href="LICENSE"><img alt="license" src="https://img.shields.io/badge/license-MIT-2ea043?style=flat-square"></a>
+  <a href="#paper"><img alt="paper" src="https://img.shields.io/badge/paper-ICIMCIS%202026-8b5cf6?style=flat-square"></a>
   <a href="#quick-start"><img alt="python" src="https://img.shields.io/badge/python-3.10%2B-3776AB?style=flat-square&logo=python&logoColor=white"></a>
   <a href="#api-endpoints"><img alt="fastapi" src="https://img.shields.io/badge/FastAPI-0.100%2B-009688?style=flat-square&logo=fastapi&logoColor=white"></a>
   <a href="#dashboard"><img alt="react" src="https://img.shields.io/badge/React-18-61DAFB?style=flat-square&logo=react&logoColor=black"></a>
@@ -27,7 +24,7 @@
 
 ## About
 
-**Actionability Scoring** is a research prototype built for the thesis *Context-Aware Telemetry Observability Evaluation Agent for MITRE ATT&CK-Aligned Wazuh Events*. It is **not a detection tool**. It answers a different question:
+**Actionability Scoring** is the research prototype behind the paper *Context-Aware Telemetry Observability Evaluation Agent for MITRE ATT&CK-Aligned Wazuh Events* (ICIMCIS 2026). It is **not a detection tool**. It answers a different question:
 
 > "Is this alert or case complete enough to investigate, or does an analyst still have to hunt through raw logs?"
 
@@ -49,7 +46,7 @@ The answer is a **0–100 actionability score**, computed both **per alert** and
 - **Console-style dashboard** — Cases and Alerts views, evidence table (W/Q/E plus event sources), typed relations, timeline with inline relation chips, Markdown case report export.
 - **Mock/Live switch** — a deterministic demo without Wazuh, or live data from the Wazuh Indexer, switchable at runtime from the UI.
 - **Reproducible artifacts** — `weights.json`, `AHP_RESULTS.md`, and `data/mitre_traceability.csv` (field → OSSEM → MITRE component → weight).
-- **43 automated tests** — AHP, normalization, correlation, scoring, case scoring.
+- **Automated tests** — AHP, normalization, correlation, scoring, case scoring.
 
 ## Screenshots
 
@@ -57,11 +54,13 @@ Captured from **MOCK** mode (deterministic fixtures), so the demo is fully repro
 
 | Cases | Case detail |
 |---|---|
-| ![Cases](docs/screenshots/01-cases.png) | ![Case detail](docs/screenshots/02-case-detail.png) |
+| ![Cases](docs/screenshots/cases.png) | ![Case detail](docs/screenshots/case-detail.png) |
 
-![Alerts](docs/screenshots/03-alerts.png)
+| Alerts | Alert detail |
+|---|---|
+| ![Alerts](docs/screenshots/alerts.png) | ![Alert detail](docs/screenshots/alert-detail.png) |
 
-In **Case detail** (second screenshot), the evidence table shows weight, quality `Q`, evidence confidence `E`, contribution, and source carriers (index + document id). The **Alerts** view (above) lists per-alert AHP scores with technique and level filters.
+In **Case detail**, the evidence table shows weight, quality `Q`, evidence confidence `E`, contribution, and source carriers (index + document id). The **Alerts** view lists per-alert AHP scores with technique and level filters. Design notes are in [`docs/UI-NOTES.md`](docs/UI-NOTES.md).
 
 ## How it works
 
@@ -119,8 +118,16 @@ S_case = 100 × Σ (w_f × Q_f × E_f) / Σ w_f
 E_f    = confidence of the seed → event path that carries the fact (1.0 for seed facts)
 ```
 
-Levels: **Low < 25**, **Medium 25–50**, **High > 50** (provisional; calibrated during the evaluation phase).
-The `required` / `supporting` / `context` roles are this study's operational classification, not official MITRE labels.
+**Seed score** — the seed alert alone, scored with the case-level quality terms (`scoring.calculate_seed_score`). Without correlated events, consistency stays at 0.5, so the maximum is 87.5:
+
+```text
+S_seed = 100 × Σ (w_f × Q_f) / Σ w_f        (K_f = 0.5)
+ΔS     = (S_case / 100 − S_seed / 87.5) × 100
+```
+
+**Field roles** — each technique profile marks a field `required`, `supporting` or `context`. `S_alert` and `S_seed` count every profiled field; `S_case` skips `supporting` fields, which are usually carried only by the seed event and never corroborated. Required coverage counts `required` fields only. The roles are this study's operational classification, not official MITRE labels.
+
+Levels: **Low < 25**, **Medium 25–50**, **High > 50** — display bands in the dashboard only; they are not calibrated and not used in the paper's evaluation.
 
 ### Why a case can score 100 while an alert cannot
 
@@ -186,7 +193,7 @@ The Vite dev server proxies `/api` to `http://localhost:8000` (override with `VI
 
 ```bash
 cd backend
-pytest -q          # 43 tests: AHP, normalizer, correlation, scoring, case scoring
+pytest -q          # AHP, normalizer, correlation, scoring, case scoring
 ```
 
 ## Dashboard
@@ -231,8 +238,17 @@ pytest -q          # 43 tests: AHP, normalizer, correlation, scoring, case scori
 | `backend/AHP_RESULTS.md` | All pairwise matrices, λmax, CI, CR, global weights | appendix + methodology |
 | `backend/data/mitre_traceability.csv` | `technique → field → role → weight → Wazuh path → OSSEM → MITRE component` | content validity |
 | `backend/field_metadata.py` | Field mapping source | reproducibility |
-| `backend/technique_profiles.py` | Expected fields per technique with data-source citations | methodology |
-| `evaluation/` | ART runbook, orchestrator script, `runs.csv` template | evaluation chapter |
+| `backend/technique_profiles.py` | Expected fields and roles per technique with data-source citations | methodology |
+| `evaluation/wazuh/local_rules.xml` | Wazuh detection rules (v1, frozen 2026-10-08) | seed alerts |
+| `evaluation/ART_RUNBOOK.md`, `evaluation/ATTACK_VARIATIONS.md`, `evaluation/windows/` | ART procedure, behavioral variants, orchestrator script | experimental procedure |
+| `evaluation/results/` | Evaluation scripts and aggregated results (Tables V–VI, score distribution) | results |
+| `backend/recalc_delta_s.py` | S_alert / S_seed / S_case / ΔS per technique | Table VI |
+
+## Paper
+
+> J. D. Hermawan, J. Tanuwidjaja, K. D. Pramono, and A. Kurniawan, "Context-Aware Telemetry Observability Evaluation Agent for MITRE ATT&CK-Aligned Wazuh Events," ICIMCIS 2026.
+
+The code state used for the camera-ready paper is tagged [`icimcis2026-camera-ready`](https://github.com/kavakoss/actionability-scoring-dashboard/releases/tag/icimcis2026-camera-ready). How to rerun each result is described in [`evaluation/results/README.md`](evaluation/results/README.md). Citation metadata is in [`CITATION.cff`](CITATION.cff).
 
 ## Project structure
 
@@ -253,7 +269,8 @@ actionability-scoring-dashboard/
 │   ├── weights.json           # generated: AHP weights
 │   ├── AHP_RESULTS.md         # generated: full AHP report
 │   ├── live_demo.py           # CLI: bounded live case expansion
-│   ├── tests/                 # pytest suite (43 tests)
+│   ├── recalc_delta_s.py      # CLI: S_alert / S_seed / S_case / ΔS (Table VI)
+│   ├── tests/                 # pytest suite
 │   └── requirements.txt
 ├── frontend/
 │   └── src/
@@ -267,15 +284,22 @@ actionability-scoring-dashboard/
 │           └── ui.jsx             # design primitives
 ├── evaluation/
 │   ├── ART_RUNBOOK.md         # manual ART procedure
+│   ├── ATTACK_VARIATIONS.md   # behavioral variants per technique
 │   ├── runs.csv               # run log template
+│   ├── results/               # evaluation scripts + aggregated results
+│   ├── wazuh/                 # detection rules (frozen v1)
 │   └── windows/
 │       ├── Invoke-ArtPlan.ps1 # ART orchestrator (Pilot/Unattended)
 │       └── STEP-BY-STEP.md    # operator guide
+├── python-package/            # standalone Wazuh scoring client
 ├── docs/
 │   ├── banner.svg
+│   ├── UI-NOTES.md            # dashboard design notes
 │   └── screenshots/
 ├── nginx/                     # reverse proxy for docker-compose
-└── docker-compose.yml
+├── docker-compose.yml
+├── CITATION.cff
+└── LICENSE
 ```
 
 ## Limitations
@@ -287,22 +311,14 @@ actionability-scoring-dashboard/
 - Archive retention is limited; Process Create records for processes started before the archive window are missing, which can break lineage.
 - `originalFileName` and `signatureStatus` have no OSSEM CDM attribute (noted in the traceability CSV).
 - The `required` / `supporting` / `context` roles are a study-defined operational classification, not official MITRE labels.
-- Low/Medium/High thresholds are provisional until calibrated in the evaluation phase.
+- Low/Medium/High bands are display aids only and have not been calibrated.
+- Process-execution techniques (T1059.001, T1059.003) hit the alert-score ceiling in this lab, because Sysmon EID 1 carries every expected field.
 - The score measures **evidence completeness**, not maliciousness; an adversary who populates fields can raise it.
 - The API has no authentication yet; run it only on a trusted lab network or Tailscale, never on the public internet.
 
-## Status & roadmap
+## Status
 
-| Phase | Status |
-|---|---|
-| Normalizer + typed-edge correlation engine | done |
-| AHP weights + technique profiles + traceability artifacts | done |
-| Alert-level + case-level scoring | done |
-| Dashboard (Cases/Alerts/Case detail) + MOCK/LIVE switch | done |
-| Critical-only seed policy + unrestricted case evidence | done |
-| ART runbook + orchestrator for labeled data | done |
-| Evaluation: sensitivity A/B, correlation ablation, discrimination, threshold calibration, weight perturbation | in progress |
-| Paper writing (results and discussion) | upcoming |
+Research prototype, complete for the ICIMCIS 2026 paper (see [Paper](#paper)). Future directions from the paper: degraded and heterogeneous telemetry, techniques whose evidence lives in DNS or registry events, comparison against analyst ratings, and field-value quality (FVQ).
 
 ## Troubleshooting
 
@@ -312,11 +328,14 @@ actionability-scoring-dashboard/
 | Frontend cannot reach the API | Make sure the backend is running; check `VITE_API_TARGET` / `vite.config.js` |
 | `npm install` fails | Try `npm install --legacy-peer-deps` |
 | Live mode empty or erroring | Check `last_error` in `/api/health`; verify `.env` and Indexer connectivity |
-| Live dashboard empty although alerts exist | Lower `SEED_MIN_LEVEL` (this lab currently peaks at level 12) |
+| Live dashboard empty although alerts exist | Your rules may not reach level 15; lower `SEED_MIN_LEVEL` or load the rules in `evaluation/wazuh/` |
 | Blank page | Check the browser console (F12) |
 
 ## Authors
 
 Jason Tanuwidjaja · Johan Davin Hermawan · Kevin Diaz Pramono — Computer Science, Bina Nusantara University.
+Supervisor: Dr. Aditya Kurniawan.
 
-Thesis: *Context-Aware Telemetry Observability Evaluation Agent for MITRE ATT&CK-Aligned Wazuh Events*.
+## License
+
+[MIT](LICENSE)
