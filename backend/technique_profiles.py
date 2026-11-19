@@ -11,8 +11,12 @@ technique and the OSSEM attributes available in Sysmon EID 1/3 telemetry:
   T1105 Ingress Tool Transfer Network Connection Creation (DS0029), File
                               Metadata, Command Execution (DS0017)
 
-Roles are reporting metadata only (required / supporting / context); every
-field listed in a profile contributes its AHP global weight to the score.
+Roles (required / supporting / context) affect scoring as follows. The alert
+score (S_alert) and the seed score (S_seed) count every field listed in a
+profile with its AHP global weight. The case score (S_case) skips "supporting"
+fields: they are usually carried only by the seed event itself and are never
+corroborated, so they would cap S_case below 100. Required coverage counts
+"required" fields only.
 The role labels are this study's operational interpretation of the technique's
 ATT&CK data components; MITRE does not designate individual Sysmon fields as
 "required" or "supporting".
@@ -116,8 +120,11 @@ def _default_profile() -> dict:
         # an unknown-technique profile from receiving free completeness points.
         if category == "timeline":
             continue
+        # "context", not "supporting": the case score skips supporting fields,
+        # so an all-supporting default profile would score every unprofiled
+        # case as 0 with no facts.
         for name in category_fields:
-            fields[name] = "supporting"
+            fields[name] = "context"
     return {
         "name": "Default (technique not profiled)",
         "sources": ["All instrumented fields; used when no technique profile applies"],
