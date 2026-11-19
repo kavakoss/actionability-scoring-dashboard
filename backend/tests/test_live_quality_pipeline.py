@@ -33,6 +33,11 @@ def test_live_loader_filters_before_display_limit_and_reports_quality(monkeypatc
     monkeypatch.setitem(sys.modules, "wazuh_client", fake_wazuh)
     monkeypatch.setattr(main, "LIVE_ALERT_LIMIT", 1)
     monkeypatch.setattr(main, "LIVE_ALERT_FETCH_LIMIT", 10)
+    # This test covers the rolling-window path. Pin the window so the expected
+    # quality payload does not depend on a local .env that configures
+    # LIVE_FROM/LIVE_TO for a fixed evaluation window.
+    monkeypatch.setattr(main, "LIVE_FROM", None)
+    monkeypatch.setattr(main, "LIVE_TO", None)
 
     results = main._load_live()
 

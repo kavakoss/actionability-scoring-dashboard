@@ -1,0 +1,38 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite the paper below."
+title: "Actionability Scoring Dashboard"
+type: software
+authors:
+  - given-names: Jason
+    family-names: Tanuwidjaja
+    affiliation: "Bina Nusantara University"
+  - given-names: Johan Davin
+    family-names: Hermawan
+    affiliation: "Bina Nusantara University"
+  - given-names: Kevin Diaz
+    family-names: Pramono
+    affiliation: "Bina Nusantara University"
+repository-code: "https://github.com/kavakoss/actionability-scoring-dashboard"
+license: MIT
+keywords:
+  - actionability scoring
+  - telemetry quality
+  - alert correlation
+  - MITRE ATT&CK
+  - Wazuh
+  - Sysmon
+  - analytic hierarchy process
+preferred-citation:
+  type: conference-paper
+  title: "Context-Aware Telemetry Observability Evaluation Agent for MITRE ATT&CK-Aligned Wazuh Events"
+  authors:
+    - given-names: Johan Davin
+      family-names: Hermawan
+    - given-names: Jason
+      family-names: Tanuwidjaja
+    - given-names: Kevin Diaz
+      family-names: Pramono
+    - given-names: Aditya
+      family-names: Kurniawan
+  collection-title: "ICIMCIS 2026"
+  year: 2026

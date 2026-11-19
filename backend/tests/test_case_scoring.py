@@ -66,7 +66,9 @@ def test_correlation_adds_evidence_to_case_score():
         seed["id"],
     )
 
-    assert single["case_score"] < alert_score
+    # S_case skips "supporting" fields while S_alert counts them, so a seed-only
+    # case is not compared with the alert score; correlation is measured
+    # against the seed-only case instead.
     assert correlated["case_score"] > single["case_score"]
     assert correlated["case_score"] >= alert_score
     assert correlated["required_coverage"] > single["required_coverage"]
@@ -259,3 +261,17 @@ def test_case_evidence_confidence_uses_path_not_max_incident_edge():
     assert abs(adjacency["leaf"]["identity_confidence"] - 0.72) < 1e-9
     # The strongest edge incident to leaf is 1.0, but it is not the confidence
     # of the evidence path from the seed.
+
+
+def test_unprofiled_technique_case_still_scores_its_evidence():
+    # The default profile must not be all "supporting": S_case skips supporting
+    # fields, which would leave an unprofiled case with no facts and a 0 score.
+    raw = make_event(
+        1, "2026-09-22T10:00:00.000Z", guid="{11111111-1111-1111-1111-111111111111}",
+        image=r"C:\Tools\tool.exe", command_line="tool.exe --run", user="LAB\\alice",
+        technique="T9999",
+    )
+    seed = normalize_alert(raw)
+    result = score_case([seed], [], seed["id"])
+    assert result["facts"]
+    assert result["case_score"] > 0
